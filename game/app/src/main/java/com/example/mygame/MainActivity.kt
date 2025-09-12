@@ -1,5 +1,6 @@
 package com.example.mygame
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.mygame.ui.theme.MygameTheme
 import com.example.mygame.ui.screens.DungeonCrawlerStartScreen
+import com.example.mygame.ui.activities.GameActivity
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,8 +27,9 @@ class MainActivity : ComponentActivity() {
                 ) {
                     DungeonCrawlerStartScreen(
                         onStartGame = {
-                            // TODO: Navigate to gameplay screen
-                            // Có thể chuyển sang GameplayScreen hoặc level selection
+                            // Navigate to gameplay screen
+                            val intent = Intent(this@MainActivity, GameActivity::class.java)
+                            startActivity(intent)
                         }
                     )
                 }
