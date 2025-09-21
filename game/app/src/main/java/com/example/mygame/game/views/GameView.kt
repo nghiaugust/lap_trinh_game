@@ -13,6 +13,10 @@ import com.example.mygame.game.managers.MapManager
 import com.example.mygame.game.assets.GameAssetManager
 import com.example.mygame.game.ui.MiniMap
 import com.example.mygame.game.lighting.LightingSystem
+import com.example.mygame.game.managers.ProjectileManager
+import com.example.mygame.game.managers.EnemyManager
+import com.example.mygame.game.systems.PlayerHealthSystem
+import com.example.mygame.game.ui.GameOverUI
 
 class GameView @JvmOverloads constructor(
     context: Context,
@@ -20,12 +24,24 @@ class GameView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : SurfaceView(context, attrs, defStyleAttr), SurfaceHolder.Callback {
 
+    // Game states
+    enum class GameState {
+        PLAYING,
+        GAME_OVER
+    }
+    
+    private var currentGameState = GameState.PLAYING
+
     private var gameThread: GameThread? = null
     private var player: Player? = null
     private var mapManager: MapManager? = null
     private var assetManager: GameAssetManager? = null
     private var miniMap: MiniMap? = null
     private var lightingSystem: LightingSystem? = null
+    private var projectileManager: ProjectileManager? = null
+    private var enemyManager: EnemyManager? = null
+    private var playerHealthSystem: PlayerHealthSystem? = null
+    private var gameOverUI: GameOverUI? = null
     private var paint = Paint()
     
     private var screenWidth = 0
@@ -38,6 +54,12 @@ class GameView @JvmOverloads constructor(
     private var joystickCenterX = 0f
     private var joystickCenterY = 0f
     private var isJoystickPressed = false
+    
+    // Attack button (bottom right)
+    private var attackButtonX = 0f
+    private var attackButtonY = 0f
+    private val attackButtonRadius = 80f
+    private var isAttackButtonPressed = false
     
     // Performance optimization
     @Volatile
@@ -60,9 +82,23 @@ class GameView @JvmOverloads constructor(
             // Initialize minimap
             miniMap = MiniMap(context)
             
+            // Initialize projectile manager
+            projectileManager = ProjectileManager(context)
+            
+            // Initialize player health system
+            playerHealthSystem = PlayerHealthSystem()
+            
+            // Initialize game over UI
+            gameOverUI = GameOverUI()
+            
             // Initialize player with asset manager
             assetManager?.let { assets ->
                 player = Player(context, assets)
+                
+                // Initialize enemy manager (needs mapManager)
+                mapManager?.let { map ->
+                    enemyManager = EnemyManager(context, assets, map)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -80,6 +116,10 @@ class GameView @JvmOverloads constructor(
         joystickX = joystickCenterX
         joystickY = joystickCenterY
         
+        // Position attack button at bottom right
+        attackButtonX = screenWidth - attackButtonRadius - marginFromEdge
+        attackButtonY = screenHeight - attackButtonRadius - marginFromEdge
+        
         // Initialize minimap
         mapManager?.let { map ->
             miniMap?.initialize(map, screenWidth, screenHeight)
@@ -88,9 +128,22 @@ class GameView @JvmOverloads constructor(
             lightingSystem = LightingSystem(map)
             lightingSystem?.initialize(screenWidth, screenHeight)
             
+            // Initialize projectile manager
+            assetManager?.let { assets ->
+                projectileManager?.initialize(assets)
+            }
+            
             // Initialize player position at map start position
             player?.setPosition(map.playerStartX, map.playerStartY)
+            
+            // Spawn initial skeletons
+            player?.let { p ->
+                enemyManager?.spawnInitialSkeletons(p.getX(), p.getY(), 3)
+            }
         }
+        
+        // Initialize game over UI
+        gameOverUI?.initialize(screenWidth.toFloat(), screenHeight.toFloat())
         
         startGameThread()
     }
@@ -141,6 +194,20 @@ class GameView @JvmOverloads constructor(
         val x = event.x
         val y = event.y
 
+        // Handle game over UI touch first
+        if (currentGameState == GameState.GAME_OVER) {
+            gameOverUI?.let { ui ->
+                if (ui.handleTouch(x, y, event.action)) {
+                    if (event.action == MotionEvent.ACTION_UP) {
+                        // Continue button was clicked - restart game
+                        restartGame()
+                    }
+                    return true
+                }
+            }
+            return true // Block all other touches during game over
+        }
+
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 // Check if touch is on minimap first
@@ -150,13 +217,26 @@ class GameView @JvmOverloads constructor(
                     }
                 }
                 
+                // Check if touch is on attack button
+                val attackDistance = Math.sqrt(
+                    Math.pow((x - attackButtonX).toDouble(), 2.0) +
+                    Math.pow((y - attackButtonY).toDouble(), 2.0)
+                ).toFloat()
+                
+                if (attackDistance <= attackButtonRadius) {
+                    isAttackButtonPressed = true
+                    performAttack(x, y)
+                    Log.d("GameView", "Attack button pressed")
+                    return true
+                }
+                
                 // Check if touch is within joystick area
-                val distance = Math.sqrt(
+                val joystickDistance = Math.sqrt(
                     Math.pow((x - joystickCenterX).toDouble(), 2.0) +
                     Math.pow((y - joystickCenterY).toDouble(), 2.0)
                 ).toFloat()
                 
-                if (distance <= joystickRadius) {
+                if (joystickDistance <= joystickRadius) {
                     isJoystickPressed = true
                     joystickX = x
                     joystickY = y
@@ -201,13 +281,40 @@ class GameView @JvmOverloads constructor(
                     player?.stopMovement()
                     Log.d("GameView", "Joystick released")
                 }
+                
+                if (isAttackButtonPressed) {
+                    isAttackButtonPressed = false
+                    Log.d("GameView", "Attack button released")
+                }
             }
         }
         
         return true
     }
+    
+    private fun performAttack(touchX: Float, touchY: Float) {
+        player?.let { p ->
+            projectileManager?.let { pm ->
+                // Bắn đạn theo hướng nhân vật đang di chuyển/quay mặt
+                val success = pm.createFireballByDirection(p.getX(), p.getY(), p.getFacingDirection())
+                
+                if (success) {
+                    Log.d("GameView", "Fireball created from (${p.getX()}, ${p.getY()}) facing direction ${p.getFacingDirection()}")
+                } else {
+                    Log.d("GameView", "Cannot create fireball (cooldown or limit reached)")
+                }
+            }
+        }
+    }
 
     fun update() {
+        // Only update game logic when playing
+        if (currentGameState != GameState.PLAYING) {
+            return
+        }
+        
+        val updateStartTime = System.currentTimeMillis()
+        
         // Chỉ update khi có player và mapManager
         player?.let { p ->
             mapManager?.let { map ->
@@ -220,6 +327,24 @@ class GameView @JvmOverloads constructor(
                     
                     // Update minimap exploration
                     miniMap?.updateExploration(p.getX(), p.getY())
+                    
+                    // Update projectiles
+                    projectileManager?.update(1f/60f, map) // Assuming 60 FPS
+                    
+                    // Update player health system
+                    playerHealthSystem?.update(1f/60f)
+                    
+                    // Check if we have time left for enemy updates
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - updateStartTime < 8) { // Max 8ms for update
+                        // Update enemies
+                        lightingSystem?.let { lighting ->
+                            enemyManager?.update(1f/60f, p.getX(), p.getY(), lighting)
+                        }
+                        
+                        // Check combat interactions
+                        checkCombatInteractions()
+                    }
                 }
             }
         }
@@ -237,20 +362,35 @@ class GameView @JvmOverloads constructor(
             mapManager?.let { map ->
                 p.draw(canvas, paint, map.cameraX, map.cameraY)
                 
+                // Draw projectiles (before lighting so they get shadowed)
+                projectileManager?.draw(canvas, map.cameraX, map.cameraY)
+                
+                // Draw enemies (before lighting so they get shadowed)
+                enemyManager?.draw(canvas, map.cameraX, map.cameraY)
+                
                 // Update and draw lighting system
                 lightingSystem?.updateLighting(p.getX(), p.getY(), map.cameraX, map.cameraY)
                 lightingSystem?.drawShadows(canvas)
             }
         }
         
-        // Draw joystick (always on top, not affected by camera)
+        // Draw UI elements (always on top, not affected by camera)
         drawJoystick(canvas)
+        drawAttackButton(canvas)
+        
+        // Draw player health and armor UI
+        playerHealthSystem?.draw(canvas)
         
         // Draw minimap (always on top)
         player?.let { p ->
             mapManager?.let { map ->
                 miniMap?.draw(canvas, map, p.getX(), p.getY())
             }
+        }
+        
+        // Draw game over UI if game is over
+        if (currentGameState == GameState.GAME_OVER) {
+            gameOverUI?.draw(canvas)
         }
     }
 
@@ -278,6 +418,47 @@ class GameView @JvmOverloads constructor(
         canvas.drawCircle(joystickX, joystickY, 50f, paint)  // Tăng từ 40f lên 50f
     }
     
+    private fun drawAttackButton(canvas: Canvas) {
+        // Draw attack button base
+        paint.color = if (isAttackButtonPressed) {
+            Color.argb(150, 255, 100, 100) // Red when pressed
+        } else {
+            Color.argb(120, 255, 150, 50) // Orange when not pressed
+        }
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(attackButtonX, attackButtonY, attackButtonRadius, paint)
+        
+        // Draw attack button border
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 4f
+        canvas.drawCircle(attackButtonX, attackButtonY, attackButtonRadius, paint)
+        
+        // Draw fire symbol in the center
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.FILL
+        paint.textSize = 40f
+        paint.textAlign = Paint.Align.CENTER
+        
+        // Draw flame emoji or text
+        val fireText = "🔥" // You can use text or draw custom flame shape
+        canvas.drawText(fireText, attackButtonX, attackButtonY + 15f, paint)
+        
+        // Alternative: draw simple flame shape if emoji doesn't work
+        paint.color = Color.YELLOW
+        paint.style = Paint.Style.FILL
+        val flameSize = 20f
+        canvas.drawCircle(attackButtonX, attackButtonY - 5f, flameSize * 0.6f, paint)
+        
+        paint.color = Color.RED
+        val flamePath = Path()
+        flamePath.moveTo(attackButtonX - flameSize * 0.3f, attackButtonY + 5f)
+        flamePath.lineTo(attackButtonX, attackButtonY - flameSize * 0.8f)
+        flamePath.lineTo(attackButtonX + flameSize * 0.3f, attackButtonY + 5f)
+        flamePath.close()
+        canvas.drawPath(flamePath, paint)
+    }
+    
     // Lifecycle methods
     fun onResume() {
         // Game thread will start automatically when surface is created
@@ -300,6 +481,8 @@ class GameView @JvmOverloads constructor(
         miniMap = null
         lightingSystem?.cleanup()
         lightingSystem = null
+        projectileManager?.cleanup()
+        projectileManager = null
     }
 
     inner class GameThread(
@@ -322,14 +505,24 @@ class GameView @JvmOverloads constructor(
         override fun run() {
             var nextGameTick = System.currentTimeMillis()
             var loops: Int
+            var frameStartTime: Long
             
             while (running) {
+                frameStartTime = System.currentTimeMillis()
                 loops = 0
                 
-                // Update game logic
+                // Update game logic with time limit
                 while (System.currentTimeMillis() > nextGameTick && loops < maxFrameSkip) {
                     try {
+                        val updateStart = System.currentTimeMillis()
                         gameView.update()
+                        val updateTime = System.currentTimeMillis() - updateStart
+                        
+                        // If update takes too long, skip additional updates to prevent ANR
+                        if (updateTime > 10) {
+                            Log.w("GameThread", "Update took ${updateTime}ms, skipping additional updates")
+                            break
+                        }
                     } catch (e: Exception) {
                         Log.e("GameThread", "Error in update", e)
                     }
@@ -337,15 +530,22 @@ class GameView @JvmOverloads constructor(
                     loops++
                 }
                 
-                // Render frame
+                // Render frame with time limit
                 var canvas: Canvas? = null
                 try {
                     if (surfaceHolder.surface.isValid) {
+                        val renderStart = System.currentTimeMillis()
                         canvas = surfaceHolder.lockCanvas()
                         canvas?.let { c ->
                             synchronized(surfaceHolder) {
                                 gameView.renderGame(c)
                             }
+                        }
+                        val renderTime = System.currentTimeMillis() - renderStart
+                        
+                        // Log if render takes too long
+                        if (renderTime > 12) {
+                            Log.w("GameThread", "Render took ${renderTime}ms")
                         }
                     }
                 } catch (e: Exception) {
@@ -360,17 +560,85 @@ class GameView @JvmOverloads constructor(
                     }
                 }
                 
-                // Sleep to maintain target FPS
-                val sleepTime = nextGameTick - System.currentTimeMillis()
+                // Sleep to maintain target FPS and prevent overheating
+                val frameTime = System.currentTimeMillis() - frameStartTime
+                val sleepTime = targetTime - frameTime
                 if (sleepTime > 0) {
                     try {
-                        sleep(sleepTime)
+                        Thread.sleep(sleepTime)
                     } catch (e: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        break
+                        Log.w("GameThread", "Sleep interrupted")
+                    }
+                } else if (frameTime > targetTime + 5) {
+                    // Log if frame took significantly longer than target
+                    Log.w("GameThread", "Frame took ${frameTime}ms (target: ${targetTime}ms)")
+                }
+            }
+        }
+    }
+    
+    private fun checkCombatInteractions() {
+        player?.let { p ->
+            projectileManager?.let { pm ->
+                enemyManager?.let { em ->
+                    playerHealthSystem?.let { phs ->
+                        // Check fireball hits on enemies
+                        val hitCount = em.checkFireballCollisions(pm.getActiveFireballs())
+                        
+                        // Check if enemies attack player
+                        val damageToPlayer = em.checkSkeletonAttacks(p.getX(), p.getY())
+                        
+                        if (damageToPlayer > 0 && phs.canTakeDamage()) {
+                            phs.takeDamage(damageToPlayer)
+                            Log.d("GameView", "Player takes $damageToPlayer damage from skeletons!")
+                        }
+                        
+                        if (hitCount > 0) {
+                            Log.d("GameView", "Player hit $hitCount enemies!")
+                        }
+                        
+                        // Check if player died
+                        if (phs.isDead() && currentGameState == GameState.PLAYING) {
+                            Log.d("GameView", "Game Over - Player died!")
+                            triggerGameOver()
+                        }
                     }
                 }
             }
         }
+    }
+    
+    private fun triggerGameOver() {
+        currentGameState = GameState.GAME_OVER
+        Log.d("GameView", "Game state changed to GAME_OVER")
+    }
+    
+    private fun restartGame() {
+        Log.d("GameView", "Restarting game...")
+        
+        // Reset game state
+        currentGameState = GameState.PLAYING
+        
+        // Reset player health
+        playerHealthSystem?.reset()
+        
+        // Reset player position
+        mapManager?.let { map ->
+            player?.setPosition(map.playerStartX, map.playerStartY)
+        }
+        
+        // Clear all enemies and projectiles
+        enemyManager?.clearAllSkeletons()
+        projectileManager?.clearAllProjectiles()
+        
+        // Spawn new enemies
+        player?.let { p ->
+            enemyManager?.spawnInitialSkeletons(p.getX(), p.getY(), 3)
+        }
+        
+        // Reset UI
+        gameOverUI?.reset()
+        
+        Log.d("GameView", "Game restarted successfully")
     }
 }

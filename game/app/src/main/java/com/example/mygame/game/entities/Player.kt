@@ -46,8 +46,8 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     private var isMoving = false
     
     // Player size - reduced to fit through corridors
-    private val playerWidth = 48  // Reduced from 120 to 48
-    private val playerHeight = 48 // Reduced from 120 to 48
+    private val playerWidth = 64  // Reduced from 120 to 64
+    private val playerHeight = 64 // Reduced from 120 to 64
     
     enum class Direction {
         FRONT, BACK, LEFT, RIGHT
@@ -273,4 +273,8 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     fun getY(): Float = y
     fun getWidth(): Int = playerWidth
     fun getHeight(): Int = playerHeight
+    fun getFacingDirection(): Direction = facingDirection
+    fun getVelocityX(): Float = velocityX
+    fun getVelocityY(): Float = velocityY
+    fun isPlayerMoving(): Boolean = isMoving
 }

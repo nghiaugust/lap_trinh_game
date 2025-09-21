@@ -109,6 +109,38 @@ class GameAssetManager(private val context: Context) {
         loadTexture("environment/dungeon_floor.png")
         loadTexture("environment/dungeon_wall.png")
     }
+    
+    /**
+     * Load all assets from a folder as Android Bitmaps
+     */
+    suspend fun loadAssetsFromFolder(folderPath: String): List<Bitmap?>? = withContext(Dispatchers.IO) {
+        try {
+            val assetList = context.assets.list(folderPath)
+            if (assetList == null || assetList.isEmpty()) {
+                return@withContext null
+            }
+            
+            val assets = mutableListOf<Bitmap?>()
+            assetList.forEach { fileName ->
+                if (fileName.endsWith(".png") || fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+                    val fullPath = "$folderPath/$fileName"
+                    try {
+                        val inputStream = context.assets.open(fullPath)
+                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                        assets.add(bitmap)
+                        inputStream.close()
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                        assets.add(null)
+                    }
+                }
+            }
+            assets
+        } catch (e: IOException) {
+            e.printStackTrace()
+            null
+        }
+    }
 
     /**
      * Clear cache để giải phóng memory

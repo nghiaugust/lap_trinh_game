@@ -10,9 +10,9 @@ class LightingSystem(private val mapManager: MapManager) {
     private val shadowPaint = Paint()
     
     // Light settings
-    private val lightRadius = 500f // Tăng gấp đôi từ 250f lên 500f
+    private val lightRadius = 600f // Tăng lên 600f để vùng sáng rộng hơn
     private val rayCount = 120 // Giảm từ 180 xuống 120 để tăng performance
-    private val shadowOpacity = 0.45f // Giảm từ 0.65f xuống 0.45f để sáng rõ hơn
+    private val shadowOpacity = 0.6f // Tăng độ tối xung quanh để làm nổi bật vùng sáng
     
     // Performance optimization
     private var lightCache = mutableMapOf<String, List<PointF>>()
@@ -79,10 +79,11 @@ class LightingSystem(private val mapManager: MapManager) {
         shadowPaint.color = Color.argb((255 * currentShadowOpacity).toInt(), 0, 0, 0)
         canvas.drawRect(0f, 0f, shadowBmp.width.toFloat(), shadowBmp.height.toFloat(), shadowPaint)
         
-        // Create light area by cutting out illuminated regions
+        // Create light area by cutting out illuminated regions (với ray casting để tính tường)
         shadowPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
+        shadowPaint.color = Color.WHITE // Vùng sáng hoàn toàn không có bộ lọc
         
-        // Draw illuminated area (subtract from dark overlay)
+        // Draw illuminated area using ray-casting (bị chặn bởi tường)
         val path = tempPath ?: Path()
         path.reset()
         
@@ -97,32 +98,17 @@ class LightingSystem(private val mapManager: MapManager) {
             path.close()
         }
         
-        // Create gradient for smooth light falloff
         val playerScreenPos = convertWorldToScreen(PointF(playerX, playerY), cameraX, cameraY, shadowBmp.width, shadowBmp.height)
-        val screenLightRadius = currentLightRadius * 1.5f // Tăng hệ số từ 1.2f lên 1.5f để gradient to hơn
         
         // Debug log để kiểm tra vị trí (chỉ log mỗi 60 frame)
         if (frameCounter % 60 == 0) {
             android.util.Log.d("LightingSystem", "Player world: ($playerX, $playerY), Camera: ($cameraX, $cameraY), Screen: (${playerScreenPos.x}, ${playerScreenPos.y})")
         }
         
-        val gradient = RadialGradient(
-            playerScreenPos.x, playerScreenPos.y, screenLightRadius,
-            intArrayOf(
-                Color.TRANSPARENT,           // Trung tâm hoàn toàn sáng
-                Color.argb(30, 0, 0, 0),    // Vùng gần - rất sáng
-                Color.argb(70, 0, 0, 0),    // Vùng giữa - sáng vừa
-                Color.argb(120, 0, 0, 0)    // Viền ngoài - tối dần
-            ),
-            floatArrayOf(0f, 0.3f, 0.7f, 1f), // Phân bố gradient theo tỷ lệ
-            Shader.TileMode.CLAMP
-        )
-        
-        shadowPaint.shader = gradient
+        // Draw the light area (không có gradient, chỉ vùng sáng hoàn toàn)
         canvas.drawPath(path, shadowPaint)
         
         // Reset paint
-        shadowPaint.shader = null
         shadowPaint.xfermode = null
     }
     
@@ -235,20 +221,24 @@ class LightingSystem(private val mapManager: MapManager) {
     fun setLightingPreset(preset: String) {
         when (preset) {
             "bright" -> {
-                setLightRadius(600f)  // Tăng từ 300f lên 600f
-                setShadowOpacity(0.3f) // Giảm từ 0.5f xuống 0.3f
+                setLightRadius(700f)  // Vùng sáng rộng
+                setShadowOpacity(0.3f) // Shadow nhẹ
             }
             "normal" -> {
-                setLightRadius(500f)  // Tăng từ 250f lên 500f
-                setShadowOpacity(0.45f) // Giảm từ 0.65f xuống 0.45f
+                setLightRadius(600f)  // Vùng sáng tiêu chuẩn
+                setShadowOpacity(0.6f) // Shadow vừa phải
             }
             "dark" -> {
-                setLightRadius(350f)  // Tăng từ 180f lên 350f
-                setShadowOpacity(0.6f) // Giảm từ 0.8f xuống 0.6f
+                setLightRadius(400f)  // Vùng sáng hẹp
+                setShadowOpacity(0.8f) // Shadow đậm
             }
-            "explorer" -> { // Thêm preset mới cho khám phá
-                setLightRadius(700f)
-                setShadowOpacity(0.25f)
+            "nofilter" -> { // Preset mới: vùng sáng hoàn toàn không có bộ lọc
+                setLightRadius(800f)  // Vùng sáng rất rộng
+                setShadowOpacity(0.7f) // Shadow đậm để tương phản
+            }
+            "explorer" -> { // Cho khám phá
+                setLightRadius(750f)
+                setShadowOpacity(0.4f)
             }
         }
     }
