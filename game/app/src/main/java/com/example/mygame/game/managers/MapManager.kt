@@ -17,8 +17,8 @@ class MapManager(private val context: Context) {
     private var mapWidth = 0
     private var mapHeight = 0
     
-    // Tile settings
-    private val tileSize = 64f  // Each tile is 64x64 pixels
+    // Tile settings - increased for better visibility
+    private val tileSize = 128f  // Each tile is 128x128 pixels
     
     // Public getter for tile size
     fun getTileSize(): Float = tileSize
@@ -123,14 +123,39 @@ class MapManager(private val context: Context) {
     }
     
     private fun findPlayerStartPosition() {
-        // Find entrance position (first '0' on the left side)
+        // Find entrance position - prioritize leftmost open spaces
+        var bestX = -1
+        var bestY = -1
+        var minX = mapWidth
+        
+        // First pass: find the leftmost open space
         for (y in 0 until mapHeight) {
             for (x in 0 until mapWidth) {
-                if (mapData[y][x] == '0' && x < mapWidth / 4) { // Look in left quarter
-                    // Place player in center of tile
+                if (mapData[y][x] == '0') {
+                    if (x < minX) {
+                        minX = x
+                        bestX = x
+                        bestY = y
+                    }
+                }
+            }
+        }
+        
+        // If we found a leftmost position, use it
+        if (bestX != -1 && bestY != -1) {
+            playerStartX = (bestX + 0.5f) * tileSize
+            playerStartY = (bestY + 0.5f) * tileSize
+            Log.d("MapManager", "Player start position found at leftmost entrance: ($playerStartX, $playerStartY) at tile ($bestX, $bestY)")
+            return
+        }
+        
+        // Fallback: find any open space in left quarter
+        for (y in 0 until mapHeight) {
+            for (x in 0 until mapWidth) {
+                if (mapData[y][x] == '0' && x < mapWidth / 4) {
                     playerStartX = (x + 0.5f) * tileSize
                     playerStartY = (y + 0.5f) * tileSize
-                    Log.d("MapManager", "Player start position found: ($playerStartX, $playerStartY) at tile ($x, $y)")
+                    Log.d("MapManager", "Player start position found (left quarter): ($playerStartX, $playerStartY) at tile ($x, $y)")
                     return
                 }
             }

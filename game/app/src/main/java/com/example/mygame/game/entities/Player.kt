@@ -21,7 +21,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     private var y = 0f
     private var velocityX = 0f
     private var velocityY = 0f
-    private val speed = 8f
+    private val speed = 12f // Increased speed for larger character size
     
     // Player sprite animations
     private var spritesBack = mutableListOf<Bitmap>()
@@ -45,9 +45,9 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     private val animationSpeed = 8f // Frames before switching to next animation frame
     private var isMoving = false
     
-    // Player size - reduced to fit through corridors
-    private val playerWidth = 64  // Reduced from 120 to 64
-    private val playerHeight = 64 // Reduced from 120 to 64
+    // Player size - increased for better visibility
+    private val playerWidth = 128  // Increased from 64 to 128
+    private val playerHeight = 128 // Increased from 64 to 128
     
     enum class Direction {
         FRONT, BACK, LEFT, RIGHT
@@ -77,13 +77,13 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                     Log.d("Player", "Loaded idle front sprite")
                 } ?: Log.e("Player", "Failed to load idle front sprite")
                 
-                val idleLeftBitmap = assetManager.loadTexture("characters/player/idle/player_idle_left.png")
+                val idleLeftBitmap = assetManager.loadTexture("characters/player/idle/player_idle_right.png")
                 idleLeftBitmap?.let {
-                    idleLeft = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
-                    // Create right idle by flipping left
-                    idleRight = flipBitmapHorizontally(idleLeft!!)
-                    Log.d("Player", "Loaded idle left/right sprites")
-                } ?: Log.e("Player", "Failed to load idle left sprite")
+                    idleRight = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
+                    // Create left idle by flipping right
+                    idleLeft = flipBitmapHorizontally(idleRight!!)
+                    Log.d("Player", "Loaded idle right sprite and created left by flipping")
+                } ?: Log.e("Player", "Failed to load idle right sprite")
                 
                 // Load back sprites (3 frames)
                 for (i in 1..3) {
@@ -107,29 +107,29 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                     } ?: Log.e("Player", "Failed to load walk front frame $i")
                 }
                 
-                // Load left sprites (3 frames)
+                // Load left sprites (3 frames) - now load from right folder
                 for (i in 1..3) {
                     val frameNumber = i.toString().padStart(2, '0')
-                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_left_$frameNumber.png")
+                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_right_$frameNumber.png")
                     imageBitmap?.let {
                         val bitmap = it.asAndroidBitmap()
-                        spritesLeft.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
-                        Log.d("Player", "Loaded walk left frame $i")
-                    } ?: Log.e("Player", "Failed to load walk left frame $i")
+                        spritesRight.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
+                        Log.d("Player", "Loaded walk right frame $i")
+                    } ?: Log.e("Player", "Failed to load walk right frame $i")
                 }
                 
-                // Create right sprites by flipping left sprites horizontally
-                for (leftSprite in spritesLeft) {
-                    val flippedSprite = flipBitmapHorizontally(leftSprite)
-                    spritesRight.add(flippedSprite)
+                // Create left sprites by flipping right sprites horizontally
+                for (rightSprite in spritesRight) {
+                    val flippedSprite = flipBitmapHorizontally(rightSprite)
+                    spritesLeft.add(flippedSprite)
                 }
-                Log.d("Player", "Created ${spritesRight.size} right sprites by flipping")
+                Log.d("Player", "Created ${spritesLeft.size} left sprites by flipping right sprites")
                 
                 Log.d("Player", "Sprite loading summary:")
                 Log.d("Player", "  Back sprites: ${spritesBack.size}")
                 Log.d("Player", "  Front sprites: ${spritesFront.size}")
-                Log.d("Player", "  Left sprites: ${spritesLeft.size}")
                 Log.d("Player", "  Right sprites: ${spritesRight.size}")
+                Log.d("Player", "  Left sprites: ${spritesLeft.size} (created by flipping right)")
             }
         } catch (e: Exception) {
             Log.e("Player", "Error loading sprites", e)

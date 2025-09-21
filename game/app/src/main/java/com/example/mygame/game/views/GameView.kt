@@ -17,6 +17,7 @@ import com.example.mygame.game.managers.ProjectileManager
 import com.example.mygame.game.managers.EnemyManager
 import com.example.mygame.game.systems.PlayerHealthSystem
 import com.example.mygame.game.ui.GameOverUI
+import com.example.mygame.game.audio.SoundManager
 
 class GameView @JvmOverloads constructor(
     context: Context,
@@ -42,6 +43,7 @@ class GameView @JvmOverloads constructor(
     private var enemyManager: EnemyManager? = null
     private var playerHealthSystem: PlayerHealthSystem? = null
     private var gameOverUI: GameOverUI? = null
+    private var soundManager: SoundManager? = null
     private var paint = Paint()
     
     private var screenWidth = 0
@@ -50,7 +52,7 @@ class GameView @JvmOverloads constructor(
     // Touch controls
     private var joystickX = 0f
     private var joystickY = 0f
-    private var joystickRadius = 120f  // Tăng từ 100f lên 120f để dễ điều khiển hơn
+    private var joystickRadius = 180f  // Increased for better visibility and easier control
     private var joystickCenterX = 0f
     private var joystickCenterY = 0f
     private var isJoystickPressed = false
@@ -58,7 +60,7 @@ class GameView @JvmOverloads constructor(
     // Attack button (bottom right)
     private var attackButtonX = 0f
     private var attackButtonY = 0f
-    private val attackButtonRadius = 80f
+    private val attackButtonRadius = 120f // Increased for better visibility
     private var isAttackButtonPressed = false
     
     // Performance optimization
@@ -91,6 +93,11 @@ class GameView @JvmOverloads constructor(
             // Initialize game over UI
             gameOverUI = GameOverUI()
             
+            // Initialize sound manager
+            Log.d("GameView", "Initializing SoundManager...")
+            soundManager = SoundManager(context)
+            Log.d("GameView", "SoundManager initialized")
+            
             // Initialize player with asset manager
             assetManager?.let { assets ->
                 player = Player(context, assets)
@@ -110,7 +117,7 @@ class GameView @JvmOverloads constructor(
         screenHeight = height
         
         // Position joystick at bottom left with more margin from edges
-        val marginFromEdge = 80f  // Tăng khoảng cách từ viền lên 80dp
+        val marginFromEdge = 120f  // Increased margin for larger UI elements
         joystickCenterX = joystickRadius + marginFromEdge
         joystickCenterY = screenHeight - joystickRadius - marginFromEdge
         joystickX = joystickCenterX
@@ -144,6 +151,13 @@ class GameView @JvmOverloads constructor(
         
         // Initialize game over UI
         gameOverUI?.initialize(screenWidth.toFloat(), screenHeight.toFloat())
+        
+        // Start background music
+        Log.d("GameView", "Starting background music in surfaceCreated...")
+        soundManager?.startBackgroundMusic()
+        
+        // Debug music status after a short delay
+        soundManager?.debugMusicStatus()
         
         startGameThread()
     }
@@ -299,6 +313,7 @@ class GameView @JvmOverloads constructor(
                 val success = pm.createFireballByDirection(p.getX(), p.getY(), p.getFacingDirection())
                 
                 if (success) {
+                    soundManager?.playAttackSound() // Play attack sound when fireball is created
                     Log.d("GameView", "Fireball created from (${p.getX()}, ${p.getY()}) facing direction ${p.getFacingDirection()}")
                 } else {
                     Log.d("GameView", "Cannot create fireball (cooldown or limit reached)")
@@ -462,6 +477,7 @@ class GameView @JvmOverloads constructor(
     // Lifecycle methods
     fun onResume() {
         // Game thread will start automatically when surface is created
+        soundManager?.onResume()
     }
     
     fun onPause() {
@@ -469,6 +485,7 @@ class GameView @JvmOverloads constructor(
         if (isGameRunning) {
             stopGameThread()
         }
+        soundManager?.onPause()
     }
     
     fun onDestroy() {
@@ -483,6 +500,8 @@ class GameView @JvmOverloads constructor(
         lightingSystem = null
         projectileManager?.cleanup()
         projectileManager = null
+        soundManager?.cleanup()
+        soundManager = null
     }
 
     inner class GameThread(
@@ -590,10 +609,12 @@ class GameView @JvmOverloads constructor(
                         
                         if (damageToPlayer > 0 && phs.canTakeDamage()) {
                             phs.takeDamage(damageToPlayer)
+                            soundManager?.playHurtSound() // Play hurt sound when player takes damage
                             Log.d("GameView", "Player takes $damageToPlayer damage from skeletons!")
                         }
                         
                         if (hitCount > 0) {
+                            soundManager?.playExplosionSound() // Play explosion sound when fireball hits
                             Log.d("GameView", "Player hit $hitCount enemies!")
                         }
                         
@@ -641,4 +662,33 @@ class GameView @JvmOverloads constructor(
         
         Log.d("GameView", "Game restarted successfully")
     }
+    
+    // Sound control methods
+    fun toggleMusic() {
+        soundManager?.let { sound ->
+            sound.enableMusic(!sound.isMusicEnabled())
+        }
+    }
+    
+    fun setMusicVolume(volume: Float) {
+        soundManager?.setMusicVolume(volume)
+    }
+    
+    fun setSfxVolume(volume: Float) {
+        soundManager?.setSfxVolume(volume)
+    }
+    
+    fun enableMusic(enabled: Boolean) {
+        soundManager?.enableMusic(enabled)
+    }
+    
+    fun enableSfx(enabled: Boolean) {
+        soundManager?.enableSfx(enabled)
+    }
+    
+    fun isMusicEnabled(): Boolean = soundManager?.isMusicEnabled() ?: true
+    fun isSfxEnabled(): Boolean = soundManager?.isSfxEnabled() ?: true
+    fun getMusicVolume(): Float = soundManager?.getMusicVolume() ?: 0.7f
+    fun getSfxVolume(): Float = soundManager?.getSfxVolume() ?: 0.8f
+    fun isMusicPlaying(): Boolean = soundManager?.isMusicPlaying() ?: false
 }

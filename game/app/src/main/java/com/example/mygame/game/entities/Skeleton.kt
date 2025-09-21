@@ -16,7 +16,7 @@ class Skeleton(
     private var y = startY
     private var velocityX = 0f
     private var velocityY = 0f
-    private val speed = 60f // Slower than player
+    private val speed = 90f // Increased speed for larger character size, still slower than player
     
     // AI States
     enum class State {
@@ -31,25 +31,27 @@ class Skeleton(
     private var currentState = State.PATROL
     private var lastStateChange = System.currentTimeMillis()
     
-    // Combat properties
+    // Combat properties - adjusted for larger character sizes
     private var health = 100 // Tăng từ 3 lên 100
     private var maxHealth = 100 // Tăng từ 3 lên 100
     private var attackDamage = 20 // Damage to player armor
-    private var attackRange = 80f // Melee range
-    private var attackCooldown = 3000L // 3 seconds between attacks
+    private var attackRange = 160f // Increased melee range for larger characters
+    private var attackCooldown = 2000L // 2 seconds between attacks
     private var lastAttackTime = 0L
-    private var detectionRange = 400f // Can see player within light radius
+    private var detectionRange = 600f // Increased detection range for larger world
     
     // Animation properties
     private var currentFrame = 0
     private var animationTimer = 0f
     private val frameTime = 0.1f // 100ms per frame
     
-    // Skeleton size
-    private val skeletonWidth = 64f
-    private val skeletonHeight = 64f
+    // Skeleton size - increased for better visibility
+    private val skeletonWidth = 128f
+    private val skeletonHeight = 128f
     
     // Animation frames for different states
+    private var walkFrames = mutableListOf<Bitmap>()
+    private var idleFrames = mutableListOf<Bitmap>()
     private var attackFrames = mutableListOf<Bitmap>()
     private var hurtFrames = mutableListOf<Bitmap>()
     private var deadFrames = mutableListOf<Bitmap>()
@@ -67,7 +69,9 @@ class Skeleton(
     private var targetPlayerX = 0f
     private var targetPlayerY = 0f
     
-    // Paint for drawing
+    // Damage tracking for EnemyManager
+    private var lastAttackDamageDealt = 0
+    private var damageDealtTime = 0L
     private val paint = Paint().apply {
         isAntiAlias = true
         isFilterBitmap = true
@@ -78,21 +82,31 @@ class Skeleton(
     private val hurtFlashDuration = 200f
     private var isFlashing = false
     
+    // Attack animation control
+    private var isPerformingAttack = false
+    private var attackAnimationStartTime = 0L
+    private val attackAnimationDuration = 600L // 600ms for attack animation
+    private var hasDealtDamageThisAttack = false
+    
     init {
         generateNewPatrolTarget()
         Log.d("Skeleton", "Skeleton created at ($x, $y)")
     }
     
-    fun loadTextures(attackFrames: List<Bitmap>, hurtFrames: List<Bitmap>, deadFrames: List<Bitmap>) {
+    fun loadTextures(walkFrames: List<Bitmap>, idleFrames: List<Bitmap>, attackFrames: List<Bitmap>, hurtFrames: List<Bitmap>, deadFrames: List<Bitmap>) {
+        this.walkFrames.clear()
+        this.idleFrames.clear()
         this.attackFrames.clear()
         this.hurtFrames.clear()
         this.deadFrames.clear()
         
+        this.walkFrames.addAll(walkFrames)
+        this.idleFrames.addAll(idleFrames)
         this.attackFrames.addAll(attackFrames)
         this.hurtFrames.addAll(hurtFrames)
         this.deadFrames.addAll(deadFrames)
         
-        Log.d("Skeleton", "Loaded ${attackFrames.size} attack, ${hurtFrames.size} hurt, ${deadFrames.size} death frames")
+        Log.d("Skeleton", "Loaded ${walkFrames.size} walk, ${idleFrames.size} idle, ${attackFrames.size} attack, ${hurtFrames.size} hurt, ${deadFrames.size} death frames")
     }
     
     fun update(deltaTime: Float, playerX: Float, playerY: Float, playerInLight: Boolean) {
@@ -208,31 +222,48 @@ class Skeleton(
         velocityY = 0f
         
         val currentTime = System.currentTimeMillis()
+        val dx = playerX - x
+        val dy = playerY - y
+        val distance = sqrt(dx * dx + dy * dy)
         
-        // Check if we can attack (cooldown)
-        if (currentTime - lastAttackTime >= attackCooldown) {
-            val dx = playerX - x
-            val dy = playerY - y
-            val distance = sqrt(dx * dx + dy * dy)
+        // Update facing direction
+        facingRight = dx > 0
+        
+        // Check if player is still in attack range
+        if (distance > attackRange) {
+            // Player moved away, chase them
+            changeState(State.CHASE)
+            return
+        }
+        
+        // Handle attack animation and damage timing
+        if (isPerformingAttack) {
+            val attackElapsed = currentTime - attackAnimationStartTime
             
-            if (distance <= attackRange) {
-                // Perform attack
+            // Deal damage at the middle of the attack animation (300ms mark)
+            if (!hasDealtDamageThisAttack && attackElapsed >= attackAnimationDuration / 2) {
                 performAttack(playerX, playerY)
+                hasDealtDamageThisAttack = true
+            }
+            
+            // Check if attack animation is complete
+            if (attackElapsed >= attackAnimationDuration) {
+                isPerformingAttack = false
+                hasDealtDamageThisAttack = false
                 lastAttackTime = currentTime
             }
-            
-            // After attack, return to chase
-            changeState(State.CHASE)
         } else {
-            // Still in cooldown, continue chasing if player moves away
-            val dx = playerX - x
-            val dy = playerY - y
-            val distance = sqrt(dx * dx + dy * dy)
-            
-            if (distance > attackRange) {
-                changeState(State.CHASE)
+            // Check if we can start a new attack (cooldown)
+            if (currentTime - lastAttackTime >= attackCooldown) {
+                // Start attack animation
+                isPerformingAttack = true
+                attackAnimationStartTime = currentTime
+                hasDealtDamageThisAttack = false
+                currentFrame = 0 // Reset animation to start
+                animationTimer = 0f
             }
         }
+        // Stay in ATTACK state - don't automatically switch to CHASE
     }
     
     private fun updateHurt(deltaTime: Float) {
@@ -288,8 +319,16 @@ class Skeleton(
         if (animationTimer >= frameTime) {
             when (currentState) {
                 State.ATTACK -> {
-                    if (attackFrames.isNotEmpty()) {
+                    // Only animate when actually performing an attack
+                    if (isPerformingAttack && attackFrames.isNotEmpty()) {
                         currentFrame = (currentFrame + 1) % attackFrames.size
+                    } else if (!isPerformingAttack) {
+                        // When not attacking, use idle animation or first attack frame
+                        if (idleFrames.isNotEmpty()) {
+                            currentFrame = 0 // Use first idle frame
+                        } else if (attackFrames.isNotEmpty()) {
+                            currentFrame = 0 // Use first attack frame as idle
+                        }
                     }
                 }
                 State.HURT -> {
@@ -303,9 +342,28 @@ class Skeleton(
                     }
                 }
                 else -> {
-                    // Use attack frames for walking/idle animation
-                    if (attackFrames.isNotEmpty()) {
-                        currentFrame = (currentFrame + 1) % attackFrames.size
+                    // Use walk frames for walking, idle frames for idle
+                    when (currentState) {
+                        State.PATROL, State.CHASE -> {
+                            if (walkFrames.isNotEmpty()) {
+                                currentFrame = (currentFrame + 1) % walkFrames.size
+                            } else if (attackFrames.isNotEmpty()) {
+                                currentFrame = (currentFrame + 1) % attackFrames.size
+                            }
+                        }
+                        State.IDLE -> {
+                            if (idleFrames.isNotEmpty()) {
+                                currentFrame = (currentFrame + 1) % idleFrames.size
+                            } else if (attackFrames.isNotEmpty()) {
+                                currentFrame = 0 // Use first attack frame as idle
+                            }
+                        }
+                        else -> {
+                            // Fallback to attack frames
+                            if (attackFrames.isNotEmpty()) {
+                                currentFrame = (currentFrame + 1) % attackFrames.size
+                            }
+                        }
                     }
                 }
             }
@@ -344,12 +402,21 @@ class Skeleton(
     
     private fun performAttack(playerX: Float, playerY: Float) {
         Log.d("Skeleton", "Skeleton attacks player at ($playerX, $playerY) for $attackDamage damage!")
-        // The actual damage will be handled by the EnemyManager
+        // Record the attack damage for EnemyManager to pick up
+        lastAttackDamageDealt = attackDamage
+        damageDealtTime = System.currentTimeMillis()
     }
     
     private fun changeState(newState: State) {
         if (currentState != newState) {
             Log.d("Skeleton", "State changed from $currentState to $newState")
+            
+            // Reset attack animation when leaving ATTACK state
+            if (currentState == State.ATTACK) {
+                isPerformingAttack = false
+                hasDealtDamageThisAttack = false
+            }
+            
             currentState = newState
             lastStateChange = System.currentTimeMillis()
             currentFrame = 0 // Reset animation
@@ -384,10 +451,11 @@ class Skeleton(
         }
         
         val frames = when (currentState) {
+            State.IDLE -> if (idleFrames.isNotEmpty()) idleFrames else if (walkFrames.isNotEmpty()) walkFrames else attackFrames
+            State.PATROL, State.CHASE -> if (walkFrames.isNotEmpty()) walkFrames else attackFrames
             State.ATTACK -> attackFrames
             State.HURT -> hurtFrames
             State.DEAD -> deadFrames
-            else -> attackFrames // Use attack frames for other states
         }
         
         if (frames.isNotEmpty() && currentFrame < frames.size) {
@@ -508,6 +576,13 @@ class Skeleton(
     fun getMaxHealth(): Int = maxHealth
     fun getAttackDamage(): Int = attackDamage
     
+    // Get damage dealt since last check (for EnemyManager)
+    fun getAndClearLastAttackDamage(): Int {
+        val damage = lastAttackDamageDealt
+        lastAttackDamageDealt = 0
+        return damage
+    }
+    
     // Check if skeleton can attack player
     fun canAttackPlayer(playerX: Float, playerY: Float): Boolean {
         if (currentState != State.ATTACK) return false
@@ -522,12 +597,7 @@ class Skeleton(
         val dy = playerY - y
         val distance = sqrt(dx * dx + dy * dy)
         
-        if (distance <= attackRange) {
-            // Update last attack time when successfully attacking
-            lastAttackTime = currentTime
-            return true
-        }
-        
-        return false
+        return distance <= attackRange
+        // Don't update lastAttackTime here - let updateAttack handle it
     }
 }

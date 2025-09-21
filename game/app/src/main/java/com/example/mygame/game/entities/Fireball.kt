@@ -10,7 +10,7 @@ class Fireball(
     startY: Float,
     targetX: Float,
     targetY: Float,
-    private val speed: Float = 300f
+    private val speed: Float = 450f // Increased speed for larger world scale
 ) {
     private var x = startX
     private var y = startY
@@ -26,9 +26,9 @@ class Fireball(
     private var animationTimer = 0f
     private val frameTime = 0.08f // 80ms per frame
     
-    // Fireball properties
-    private val fireballSize = 64f
-    private val explosionSize = 64f
+    // Fireball properties - increased for better visibility
+    private val fireballSize = 128f
+    private val explosionSize = 128f
     private var explosionTimer = 0f
     private val explosionDuration = 0.5f // 500ms explosion animation
     

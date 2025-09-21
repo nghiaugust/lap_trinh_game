@@ -24,6 +24,8 @@ class EnemyManager(
     private val maxSkeletons = 3 // Reduced maximum number of skeletons to prevent ANR
     
     // Asset loading
+    private var skeletonWalkFrames = mutableListOf<Bitmap>()
+    private var skeletonIdleFrames = mutableListOf<Bitmap>()
     private var skeletonAttackFrames = mutableListOf<Bitmap>()
     private var skeletonHurtFrames = mutableListOf<Bitmap>()
     private var skeletonDeadFrames = mutableListOf<Bitmap>()
@@ -46,13 +48,45 @@ class EnemyManager(
             try {
                 Log.d("EnemyManager", "Loading skeleton assets...")
                 
+                // Load walk frames
+                val walkAssets = assetManager.loadAssetsFromFolder("textures/characters/enemies/skeleton/walk")
+                walkAssets?.let { assets ->
+                    val tempWalkFrames = mutableListOf<Bitmap>()
+                    assets.forEach { asset ->
+                        asset?.let { bitmap ->
+                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 128, 128, false)
+                            tempWalkFrames.add(scaledBitmap)
+                        }
+                    }
+                    
+                    CoroutineScope(Dispatchers.Main).launch {
+                        skeletonWalkFrames.addAll(tempWalkFrames)
+                    }
+                }
+                
+                // Load idle frames
+                val idleAssets = assetManager.loadAssetsFromFolder("textures/characters/enemies/skeleton/idle")
+                idleAssets?.let { assets ->
+                    val tempIdleFrames = mutableListOf<Bitmap>()
+                    assets.forEach { asset ->
+                        asset?.let { bitmap ->
+                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 128, 128, false)
+                            tempIdleFrames.add(scaledBitmap)
+                        }
+                    }
+                    
+                    CoroutineScope(Dispatchers.Main).launch {
+                        skeletonIdleFrames.addAll(tempIdleFrames)
+                    }
+                }
+                
                 // Load attack frames
                 val attackAssets = assetManager.loadAssetsFromFolder("textures/characters/enemies/skeleton/attack")
                 attackAssets?.let { assets ->
                     val tempAttackFrames = mutableListOf<Bitmap>()
                     assets.forEach { asset ->
                         asset?.let { bitmap ->
-                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 64, 64, false)
+                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 128, 128, false)
                             tempAttackFrames.add(scaledBitmap)
                         }
                     }
@@ -69,7 +103,7 @@ class EnemyManager(
                     val tempHurtFrames = mutableListOf<Bitmap>()
                     assets.forEach { asset ->
                         asset?.let { bitmap ->
-                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 64, 64, false)
+                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 128, 128, false)
                             tempHurtFrames.add(scaledBitmap)
                         }
                     }
@@ -85,7 +119,7 @@ class EnemyManager(
                     val tempDeadFrames = mutableListOf<Bitmap>()
                     assets.forEach { asset ->
                         asset?.let { bitmap ->
-                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 64, 64, false)
+                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 128, 128, false)
                             tempDeadFrames.add(scaledBitmap)
                         }
                     }
@@ -96,7 +130,7 @@ class EnemyManager(
                 }
                 
                 // Fallback textures if assets fail to load
-                if (skeletonAttackFrames.isEmpty()) {
+                if (skeletonWalkFrames.isEmpty() && skeletonIdleFrames.isEmpty() && skeletonAttackFrames.isEmpty()) {
                     CoroutineScope(Dispatchers.Main).launch {
                         createFallbackTextures()
                     }
@@ -105,11 +139,11 @@ class EnemyManager(
                 // Mark as loaded and initialize existing skeletons
                 CoroutineScope(Dispatchers.Main).launch {
                     assetsLoaded = true
-                    Log.d("EnemyManager", "Skeleton assets loaded: ${skeletonAttackFrames.size} attack, ${skeletonHurtFrames.size} hurt, ${skeletonDeadFrames.size} dead frames")
+                    Log.d("EnemyManager", "Skeleton assets loaded: ${skeletonWalkFrames.size} walk, ${skeletonIdleFrames.size} idle, ${skeletonAttackFrames.size} attack, ${skeletonHurtFrames.size} hurt, ${skeletonDeadFrames.size} dead frames")
                     
                     // Initialize any existing skeletons with textures
                     skeletons.forEach { skeleton ->
-                        skeleton.loadTextures(skeletonAttackFrames, skeletonHurtFrames, skeletonDeadFrames)
+                        skeleton.loadTextures(skeletonWalkFrames, skeletonIdleFrames, skeletonAttackFrames, skeletonHurtFrames, skeletonDeadFrames)
                     }
                 }
                 
@@ -118,6 +152,11 @@ class EnemyManager(
                 CoroutineScope(Dispatchers.Main).launch {
                     createFallbackTextures()
                     assetsLoaded = true
+                    
+                    // Initialize existing skeletons with fallback textures
+                    skeletons.forEach { skeleton ->
+                        skeleton.loadTextures(skeletonWalkFrames, skeletonIdleFrames, skeletonAttackFrames, skeletonHurtFrames, skeletonDeadFrames)
+                    }
                 }
             }
         }
@@ -126,9 +165,17 @@ class EnemyManager(
     private fun createFallbackTextures() {
         Log.d("EnemyManager", "Creating fallback skeleton textures")
         
-        // Create simple colored rectangles as fallback
-        val fallbackBitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+        // Create simple colored rectangles as fallback - increased size
+        val fallbackBitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(fallbackBitmap)
+        
+        // Walk frames (white)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        skeletonWalkFrames.add(fallbackBitmap.copy(Bitmap.Config.ARGB_8888, false))
+        
+        // Idle frames (light gray)
+        canvas.drawColor(android.graphics.Color.LTGRAY)
+        skeletonIdleFrames.add(fallbackBitmap.copy(Bitmap.Config.ARGB_8888, false))
         
         // Attack frames (red)
         canvas.drawColor(android.graphics.Color.RED)
@@ -157,7 +204,7 @@ class EnemyManager(
         val skeleton = Skeleton(x, y, mapManager)
         
         if (assetsLoaded) {
-            skeleton.loadTextures(skeletonAttackFrames, skeletonHurtFrames, skeletonDeadFrames)
+            skeleton.loadTextures(skeletonWalkFrames, skeletonIdleFrames, skeletonAttackFrames, skeletonHurtFrames, skeletonDeadFrames)
         }
         
         skeletons.add(skeleton)
@@ -264,8 +311,8 @@ class EnemyManager(
                         val dy = fireball.getY() - skeleton.getY()
                         val distance = sqrt(dx * dx + dy * dy)
                         
-                        // Check collision with skeleton
-                        if (distance <= (skeleton.getWidth() / 2f + 16f)) { // 16f is fireball radius
+                        // Check collision with skeleton - updated for larger fireball
+                        if (distance <= (skeleton.getWidth() / 2f + 64f)) { // 64f is fireball radius (128/2)
                             skeleton.takeDamage(10) // 10 damage per fireball hit
                             fireball.triggerExplosion()
                             hitCount++
@@ -284,9 +331,10 @@ class EnemyManager(
         var totalDamage = 0
         
         skeletons.forEach { skeleton ->
-            if (skeleton.canAttackPlayer(playerX, playerY)) {
-                totalDamage += skeleton.getAttackDamage()
-                Log.d("EnemyManager", "Skeleton attacks player for ${skeleton.getAttackDamage()} damage!")
+            val damage = skeleton.getAndClearLastAttackDamage()
+            if (damage > 0) {
+                totalDamage += damage
+                Log.d("EnemyManager", "Skeleton dealt $damage damage to player!")
             }
         }
         
@@ -319,10 +367,14 @@ class EnemyManager(
     
     // Cleanup resources
     fun cleanup() {
+        skeletonWalkFrames.forEach { it.recycle() }
+        skeletonIdleFrames.forEach { it.recycle() }
         skeletonAttackFrames.forEach { it.recycle() }
         skeletonHurtFrames.forEach { it.recycle() }
         skeletonDeadFrames.forEach { it.recycle() }
         
+        skeletonWalkFrames.clear()
+        skeletonIdleFrames.clear()
         skeletonAttackFrames.clear()
         skeletonHurtFrames.clear()
         skeletonDeadFrames.clear()
