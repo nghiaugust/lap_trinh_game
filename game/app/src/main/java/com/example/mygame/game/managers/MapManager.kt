@@ -5,10 +5,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import com.example.mygame.R
+import android.util.Log
+import androidx.core.graphics.scale
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import kotlin.math.floor
 
 class MapManager(private val context: Context) {
     
@@ -19,6 +19,9 @@ class MapManager(private val context: Context) {
     
     // Tile settings
     private val tileSize = 64f  // Each tile is 64x64 pixels
+    
+    // Public getter for tile size
+    fun getTileSize(): Float = tileSize
     
     // Tile textures
     private var floorTexture: Bitmap? = null
@@ -95,22 +98,18 @@ class MapManager(private val context: Context) {
             val floorBitmap = BitmapFactory.decodeStream(
                 context.assets.open("textures/environment/floors/floor.png")
             )
-            floorTexture = Bitmap.createScaledBitmap(
-                floorBitmap, 
+            floorTexture = floorBitmap.scale(
                 tileSize.toInt(), 
-                tileSize.toInt(), 
-                false
+                tileSize.toInt()
             )
             
             // Load wall texture  
             val wallBitmap = BitmapFactory.decodeStream(
                 context.assets.open("textures/environment/walls/wall.png")
             )
-            wallTexture = Bitmap.createScaledBitmap(
-                wallBitmap, 
+            wallTexture = wallBitmap.scale(
                 tileSize.toInt(), 
-                tileSize.toInt(), 
-                false
+                tileSize.toInt()
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -120,6 +119,7 @@ class MapManager(private val context: Context) {
     private fun calculateWorldSize() {
         worldWidth = mapWidth * tileSize
         worldHeight = mapHeight * tileSize
+        Log.d("MapManager", "World size calculated: ${worldWidth}x${worldHeight} (${mapWidth}x${mapHeight} tiles, tile size: $tileSize)")
     }
     
     private fun findPlayerStartPosition() {
@@ -127,16 +127,31 @@ class MapManager(private val context: Context) {
         for (y in 0 until mapHeight) {
             for (x in 0 until mapWidth) {
                 if (mapData[y][x] == '0' && x < mapWidth / 4) { // Look in left quarter
+                    // Place player in center of tile
                     playerStartX = (x + 0.5f) * tileSize
                     playerStartY = (y + 0.5f) * tileSize
+                    Log.d("MapManager", "Player start position found: ($playerStartX, $playerStartY) at tile ($x, $y)")
                     return
                 }
             }
         }
         
-        // Fallback to center if no entrance found
+        // Fallback: find any open space
+        for (y in 1 until mapHeight - 1) {
+            for (x in 1 until mapWidth - 1) {
+                if (mapData[y][x] == '0') {
+                    playerStartX = (x + 0.5f) * tileSize
+                    playerStartY = (y + 0.5f) * tileSize
+                    Log.d("MapManager", "Player start position found (fallback): ($playerStartX, $playerStartY) at tile ($x, $y)")
+                    return
+                }
+            }
+        }
+        
+        // Last resort: center of world
         playerStartX = worldWidth / 2f
         playerStartY = worldHeight / 2f
+        Log.d("MapManager", "No entrance found, using center: ($playerStartX, $playerStartY)")
     }
     
     fun updateCamera(playerX: Float, playerY: Float, screenWidth: Int, screenHeight: Int) {
@@ -177,33 +192,70 @@ class MapManager(private val context: Context) {
         }
     }
     
+    // Cache for tile lookups
+    private var lastTileX = -1
+    private var lastTileY = -1
+    private var lastTileResult = false
+    
     fun isWall(x: Float, y: Float): Boolean {
         val tileX = (x / tileSize).toInt()
         val tileY = (y / tileSize).toInt()
         
-        // Check bounds
-        if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) {
-            return true // Treat out-of-bounds as walls
+        // Use cache if same tile
+        if (tileX == lastTileX && tileY == lastTileY) {
+            return lastTileResult
         }
         
-        return mapData[tileY][tileX] == '1'
+        return isWallTile(tileX, tileY)
+    }
+    
+    fun isWallTile(tileX: Int, tileY: Int): Boolean {
+        // Update cache
+        lastTileX = tileX
+        lastTileY = tileY
+        
+        // Check bounds
+        if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) {
+            lastTileResult = true
+            return true
+        }
+        
+        // Check tile type
+        lastTileResult = mapData[tileY][tileX] == '1'
+        return lastTileResult
     }
     
     fun canMoveTo(x: Float, y: Float, width: Float, height: Float): Boolean {
-        // Check all corners of the player's bounding box
+        // Quick bounds check first
+        if (x < 0 || y < 0 || x >= worldWidth || y >= worldHeight) {
+            return false
+        }
+        
+        // Simplified collision: check 4 corners with small margin
         val halfWidth = width / 2f
         val halfHeight = height / 2f
+        val margin = 4f
         
-        val left = x - halfWidth
-        val right = x + halfWidth
-        val top = y - halfHeight
-        val bottom = y + halfHeight
+        val left = x - halfWidth + margin
+        val right = x + halfWidth - margin
+        val top = y - halfHeight + margin
+        val bottom = y + halfHeight - margin
         
-        // Check four corners
-        return !isWall(left, top) && 
-               !isWall(right, top) && 
-               !isWall(left, bottom) && 
-               !isWall(right, bottom)
+        // Check all 4 corners
+        val corners = arrayOf(
+            Pair(left, top),      // Top-left
+            Pair(right, top),     // Top-right
+            Pair(left, bottom),   // Bottom-left
+            Pair(right, bottom)   // Bottom-right
+        )
+        
+        for (corner in corners) {
+            if (isWall(corner.first, corner.second)) {
+                return false
+            }
+        }
+        
+        return true
     }
     
     fun getWorldWidth(): Float = worldWidth

@@ -3,6 +3,7 @@ package com.example.mygame.game.views
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
+import android.util.Log
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -10,6 +11,8 @@ import com.example.mygame.R
 import com.example.mygame.game.entities.Player
 import com.example.mygame.game.managers.MapManager
 import com.example.mygame.game.assets.GameAssetManager
+import com.example.mygame.game.ui.MiniMap
+import com.example.mygame.game.lighting.LightingSystem
 
 class GameView @JvmOverloads constructor(
     context: Context,
@@ -21,6 +24,8 @@ class GameView @JvmOverloads constructor(
     private var player: Player? = null
     private var mapManager: MapManager? = null
     private var assetManager: GameAssetManager? = null
+    private var miniMap: MiniMap? = null
+    private var lightingSystem: LightingSystem? = null
     private var paint = Paint()
     
     private var screenWidth = 0
@@ -52,6 +57,9 @@ class GameView @JvmOverloads constructor(
             // Initialize map manager
             mapManager = MapManager(context)
             
+            // Initialize minimap
+            miniMap = MiniMap(context)
+            
             // Initialize player with asset manager
             assetManager?.let { assets ->
                 player = Player(context, assets)
@@ -72,8 +80,15 @@ class GameView @JvmOverloads constructor(
         joystickX = joystickCenterX
         joystickY = joystickCenterY
         
-        // Initialize player position at map start position
+        // Initialize minimap
         mapManager?.let { map ->
+            miniMap?.initialize(map, screenWidth, screenHeight)
+            
+            // Initialize lighting system
+            lightingSystem = LightingSystem(map)
+            lightingSystem?.initialize(screenWidth, screenHeight)
+            
+            // Initialize player position at map start position
             player?.setPosition(map.playerStartX, map.playerStartY)
         }
         
@@ -128,6 +143,13 @@ class GameView @JvmOverloads constructor(
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
+                // Check if touch is on minimap first
+                miniMap?.let { map ->
+                    if (map.onTouch(x, y)) {
+                        return true  // Minimap handled the touch
+                    }
+                }
+                
                 // Check if touch is within joystick area
                 val distance = Math.sqrt(
                     Math.pow((x - joystickCenterX).toDouble(), 2.0) +
@@ -138,6 +160,7 @@ class GameView @JvmOverloads constructor(
                     isJoystickPressed = true
                     joystickX = x
                     joystickY = y
+                    Log.d("GameView", "Joystick pressed")
                 }
             }
             
@@ -158,10 +181,15 @@ class GameView @JvmOverloads constructor(
                         joystickY = joystickCenterY + (joystickRadius * Math.sin(angle)).toFloat()
                     }
                     
-                    // Calculate movement direction
+                    // Calculate movement direction with lower sensitivity threshold
                     val deltaX = joystickX - joystickCenterX
                     val deltaY = joystickY - joystickCenterY
-                    player?.setMovementDirection(deltaX, deltaY)
+                    val movementDistance = Math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble()).toFloat()
+                    
+                    // Only send movement if joystick is moved enough (reduce from 10 to 5)
+                    if (movementDistance > 5f) {
+                        player?.setMovementDirection(deltaX, deltaY)
+                    }
                 }
             }
             
@@ -171,6 +199,7 @@ class GameView @JvmOverloads constructor(
                     joystickX = joystickCenterX
                     joystickY = joystickCenterY
                     player?.stopMovement()
+                    Log.d("GameView", "Joystick released")
                 }
             }
         }
@@ -188,6 +217,9 @@ class GameView @JvmOverloads constructor(
                     
                     // Update camera to follow player
                     map.updateCamera(p.getX(), p.getY(), screenWidth, screenHeight)
+                    
+                    // Update minimap exploration
+                    miniMap?.updateExploration(p.getX(), p.getY())
                 }
             }
         }
@@ -204,11 +236,22 @@ class GameView @JvmOverloads constructor(
         player?.let { p ->
             mapManager?.let { map ->
                 p.draw(canvas, paint, map.cameraX, map.cameraY)
+                
+                // Update and draw lighting system
+                lightingSystem?.updateLighting(p.getX(), p.getY(), map.cameraX, map.cameraY)
+                lightingSystem?.drawShadows(canvas)
             }
         }
         
         // Draw joystick (always on top, not affected by camera)
         drawJoystick(canvas)
+        
+        // Draw minimap (always on top)
+        player?.let { p ->
+            mapManager?.let { map ->
+                miniMap?.draw(canvas, map, p.getX(), p.getY())
+            }
+        }
     }
 
     private fun drawJoystick(canvas: Canvas) {
@@ -254,6 +297,9 @@ class GameView @JvmOverloads constructor(
         mapManager = null
         assetManager?.dispose()
         assetManager = null
+        miniMap = null
+        lightingSystem?.cleanup()
+        lightingSystem = null
     }
 
     inner class GameThread(
@@ -265,6 +311,7 @@ class GameView @JvmOverloads constructor(
         private var running = false
         private val targetFPS = 60
         private val targetTime = (1000.0 / targetFPS).toLong()
+        private val maxFrameSkip = 5
 
         fun setRunning(isRunning: Boolean) {
             synchronized(this) {
@@ -273,62 +320,55 @@ class GameView @JvmOverloads constructor(
         }
 
         override fun run() {
-            var startTime: Long
-            var timeMillis: Long
-            var waitTime: Long
-            var frameCount = 0
-            var lastFPSTime = System.currentTimeMillis()
+            var nextGameTick = System.currentTimeMillis()
+            var loops: Int
             
             while (running) {
-                startTime = System.currentTimeMillis()
-                var canvas: Canvas? = null
+                loops = 0
                 
+                // Update game logic
+                while (System.currentTimeMillis() > nextGameTick && loops < maxFrameSkip) {
+                    try {
+                        gameView.update()
+                    } catch (e: Exception) {
+                        Log.e("GameThread", "Error in update", e)
+                    }
+                    nextGameTick += targetTime
+                    loops++
+                }
+                
+                // Render frame
+                var canvas: Canvas? = null
                 try {
-                    // Chỉ vẽ khi surface holder có sẵn
                     if (surfaceHolder.surface.isValid) {
                         canvas = surfaceHolder.lockCanvas()
                         canvas?.let { c ->
-                            // Update game logic
-                            gameView.update()
-                            // Render game
-                            gameView.renderGame(c)
+                            synchronized(surfaceHolder) {
+                                gameView.renderGame(c)
+                            }
                         }
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("GameThread", "Error in render", e)
                 } finally {
                     canvas?.let { c ->
                         try {
                             surfaceHolder.unlockCanvasAndPost(c)
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            Log.e("GameThread", "Error unlocking canvas", e)
                         }
                     }
                 }
                 
-                // Tính toán FPS và sleep time
-                timeMillis = System.currentTimeMillis() - startTime
-                waitTime = targetTime - timeMillis
-                
-                // Sleep để duy trì FPS ổn định
-                if (waitTime > 0) {
+                // Sleep to maintain target FPS
+                val sleepTime = nextGameTick - System.currentTimeMillis()
+                if (sleepTime > 0) {
                     try {
-                        sleep(waitTime)
+                        sleep(sleepTime)
                     } catch (e: InterruptedException) {
                         Thread.currentThread().interrupt()
-                        return
+                        break
                     }
-                } else {
-                    // Nếu frame quá chậm, yield để tránh blocking
-                    yield()
-                }
-                
-                // Debug FPS (optional)
-                frameCount++
-                if (System.currentTimeMillis() - lastFPSTime >= 1000) {
-                    // Log.d("GameThread", "FPS: $frameCount")
-                    frameCount = 0
-                    lastFPSTime = System.currentTimeMillis()
                 }
             }
         }
