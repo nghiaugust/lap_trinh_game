@@ -8,7 +8,8 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.example.mygame.R
 import com.example.mygame.game.entities.Player
-import com.example.mygame.game.managers.BackgroundManager
+import com.example.mygame.game.managers.MapManager
+import com.example.mygame.game.assets.GameAssetManager
 
 class GameView @JvmOverloads constructor(
     context: Context,
@@ -18,7 +19,8 @@ class GameView @JvmOverloads constructor(
 
     private var gameThread: GameThread? = null
     private var player: Player? = null
-    private var backgroundManager: BackgroundManager? = null
+    private var mapManager: MapManager? = null
+    private var assetManager: GameAssetManager? = null
     private var paint = Paint()
     
     private var screenWidth = 0
@@ -44,11 +46,16 @@ class GameView @JvmOverloads constructor(
 
     private fun loadGameResources() {
         try {
-            // Initialize background manager
-            backgroundManager = BackgroundManager(context)
+            // Initialize asset manager
+            assetManager = GameAssetManager(context)
             
-            // Initialize player
-            player = Player(context)
+            // Initialize map manager
+            mapManager = MapManager(context)
+            
+            // Initialize player with asset manager
+            assetManager?.let { assets ->
+                player = Player(context, assets)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -65,9 +72,9 @@ class GameView @JvmOverloads constructor(
         joystickX = joystickCenterX
         joystickY = joystickCenterY
         
-        // Initialize player position in world coordinates (center of world)
-        backgroundManager?.let { bg ->
-            player?.setPosition(bg.getWorldWidth() / 2f, bg.getWorldHeight() / 2f)
+        // Initialize player position at map start position
+        mapManager?.let { map ->
+            player?.setPosition(map.playerStartX, map.playerStartY)
         }
         
         startGameThread()
@@ -172,15 +179,15 @@ class GameView @JvmOverloads constructor(
     }
 
     fun update() {
-        // Chỉ update khi có player và backgroundManager
+        // Chỉ update khi có player và mapManager
         player?.let { p ->
-            backgroundManager?.let { bg ->
+            mapManager?.let { map ->
                 if (screenWidth > 0 && screenHeight > 0) {
-                    // Update player in world coordinates
-                    p.update(bg.getWorldWidth(), bg.getWorldHeight())
+                    // Update player with collision detection
+                    p.update(map.getWorldWidth(), map.getWorldHeight(), map)
                     
                     // Update camera to follow player
-                    bg.updateCamera(p.getX(), p.getY(), screenWidth, screenHeight)
+                    map.updateCamera(p.getX(), p.getY(), screenWidth, screenHeight)
                 }
             }
         }
@@ -190,13 +197,13 @@ class GameView @JvmOverloads constructor(
         // Clear canvas
         canvas.drawColor(Color.BLACK)
         
-        // Draw tiled background with camera offset
-        backgroundManager?.draw(canvas, paint, screenWidth, screenHeight)
+        // Draw map with camera offset
+        mapManager?.draw(canvas, paint, screenWidth, screenHeight)
         
         // Draw player with camera offset
         player?.let { p ->
-            backgroundManager?.let { bg ->
-                p.draw(canvas, paint, bg.cameraX, bg.cameraY)
+            mapManager?.let { map ->
+                p.draw(canvas, paint, map.cameraX, map.cameraY)
             }
         }
         
@@ -243,8 +250,10 @@ class GameView @JvmOverloads constructor(
     fun onDestroy() {
         // Clean up resources
         stopGameThread()
-        backgroundManager?.destroy()
-        backgroundManager = null
+        mapManager?.destroy()
+        mapManager = null
+        assetManager?.dispose()
+        assetManager = null
     }
 
     inner class GameThread(

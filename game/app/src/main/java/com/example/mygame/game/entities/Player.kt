@@ -6,9 +6,15 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Matrix
-import com.example.mygame.R
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import com.example.mygame.game.assets.GameAssetManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
-class Player(private val context: Context) {
+class Player(private val context: Context, private val assetManager: GameAssetManager) {
     
     private var x = 0f
     private var y = 0f
@@ -16,13 +22,20 @@ class Player(private val context: Context) {
     private var velocityY = 0f
     private val speed = 8f
     
-    // Player sprite animations (3 frames per direction)
+    // Player sprite animations
     private var spritesBack = mutableListOf<Bitmap>()
     private var spritesFront = mutableListOf<Bitmap>()
     private var spritesLeft = mutableListOf<Bitmap>()
     private var spritesRight = mutableListOf<Bitmap>()
     
+    // Idle sprites
+    private var idleBack: Bitmap? = null
+    private var idleFront: Bitmap? = null
+    private var idleLeft: Bitmap? = null
+    private var idleRight: Bitmap? = null
+    
     private var currentSprites = mutableListOf<Bitmap>()
+    private var currentIdleSprite: Bitmap? = null
     private var facingDirection = Direction.FRONT
     
     // Animation variables
@@ -42,46 +55,67 @@ class Player(private val context: Context) {
     init {
         loadSprites()
         currentSprites = spritesFront
+        currentIdleSprite = idleFront
     }
     
     private fun loadSprites() {
         try {
-            // Load back sprites (3 frames)
-            for (i in 1..3) {
-                val resourceName = "back_$i"
-                val resourceId = context.resources.getIdentifier(resourceName, "drawable", context.packageName)
-                if (resourceId != 0) {
-                    val originalBitmap = BitmapFactory.decodeResource(context.resources, resourceId)
-                    spritesBack.add(Bitmap.createScaledBitmap(originalBitmap, playerWidth, playerHeight, false))
+            // Load sprites from assets using coroutines
+            runBlocking {
+                // Load idle sprites
+                val idleBackBitmap = assetManager.loadTexture("characters/player/idle/player_idle_back.png")
+                idleBackBitmap?.let {
+                    idleBack = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
+                }
+                
+                val idleFrontBitmap = assetManager.loadTexture("characters/player/idle/player_idle_front.png")
+                idleFrontBitmap?.let {
+                    idleFront = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
+                }
+                
+                val idleLeftBitmap = assetManager.loadTexture("characters/player/idle/player_idle_left.png")
+                idleLeftBitmap?.let {
+                    idleLeft = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
+                    // Create right idle by flipping left
+                    idleRight = flipBitmapHorizontally(idleLeft!!)
+                }
+                
+                // Load back sprites (3 frames)
+                for (i in 1..3) {
+                    val frameNumber = i.toString().padStart(2, '0')
+                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_back_$frameNumber.png")
+                    imageBitmap?.let {
+                        val bitmap = it.asAndroidBitmap()
+                        spritesBack.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
+                    }
+                }
+                
+                // Load front sprites (3 frames)
+                for (i in 1..3) {
+                    val frameNumber = i.toString().padStart(2, '0')
+                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_front_$frameNumber.png")
+                    imageBitmap?.let {
+                        val bitmap = it.asAndroidBitmap()
+                        spritesFront.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
+                    }
+                }
+                
+                // Load left sprites (3 frames)
+                for (i in 1..3) {
+                    val frameNumber = i.toString().padStart(2, '0')
+                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_left_$frameNumber.png")
+                    imageBitmap?.let {
+                        val bitmap = it.asAndroidBitmap()
+                        spritesLeft.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
+                    }
+                }
+                
+                // Create right sprites by flipping left sprites horizontally
+                for (leftSprite in spritesLeft) {
+                    val flippedSprite = flipBitmapHorizontally(leftSprite)
+                    spritesRight.add(flippedSprite)
                 }
             }
-            
-            // Load front sprites (3 frames)
-            for (i in 1..3) {
-                val resourceName = "front_$i"
-                val resourceId = context.resources.getIdentifier(resourceName, "drawable", context.packageName)
-                if (resourceId != 0) {
-                    val originalBitmap = BitmapFactory.decodeResource(context.resources, resourceId)
-                    spritesFront.add(Bitmap.createScaledBitmap(originalBitmap, playerWidth, playerHeight, false))
-                }
-            }
-            
-            // Load left sprites (3 frames)
-            for (i in 1..3) {
-                val resourceName = "left_$i"
-                val resourceId = context.resources.getIdentifier(resourceName, "drawable", context.packageName)
-                if (resourceId != 0) {
-                    val originalBitmap = BitmapFactory.decodeResource(context.resources, resourceId)
-                    spritesLeft.add(Bitmap.createScaledBitmap(originalBitmap, playerWidth, playerHeight, false))
-                }
-            }
-            
-            // Create right sprites by flipping left sprites horizontally
-            for (leftSprite in spritesLeft) {
-                val flippedSprite = flipBitmapHorizontally(leftSprite)
-                spritesRight.add(flippedSprite)
-            }
-            
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -135,27 +169,50 @@ class Player(private val context: Context) {
             Direction.LEFT -> spritesLeft
             Direction.RIGHT -> spritesRight
         }
+        
+        currentIdleSprite = when (facingDirection) {
+            Direction.FRONT -> idleFront
+            Direction.BACK -> idleBack
+            Direction.LEFT -> idleLeft
+            Direction.RIGHT -> idleRight
+        }
     }
     
-    fun update(worldWidth: Float, worldHeight: Float) {
-        // Update position
-        x += velocityX
-        y += velocityY
+    fun update(worldWidth: Float, worldHeight: Float, mapManager: com.example.mygame.game.managers.MapManager? = null) {
+        // Calculate new position
+        val newX = x + velocityX
+        val newY = y + velocityY
         
-        // Keep player within world bounds (not screen bounds)
-        val halfWidth = playerWidth / 2f
-        val halfHeight = playerHeight / 2f
-        
-        if (x - halfWidth < 0) {
-            x = halfWidth
-        } else if (x + halfWidth > worldWidth) {
-            x = worldWidth - halfWidth
-        }
-        
-        if (y - halfHeight < 0) {
-            y = halfHeight
-        } else if (y + halfHeight > worldHeight) {
-            y = worldHeight - halfHeight
+        // Check collision with map if mapManager is provided
+        if (mapManager != null) {
+            // Check X movement
+            if (mapManager.canMoveTo(newX, y, playerWidth.toFloat(), playerHeight.toFloat())) {
+                x = newX
+            }
+            // Check Y movement  
+            if (mapManager.canMoveTo(x, newY, playerWidth.toFloat(), playerHeight.toFloat())) {
+                y = newY
+            }
+        } else {
+            // Fallback to old boundary checking
+            x = newX
+            y = newY
+            
+            // Keep player within world bounds (not screen bounds)
+            val halfWidth = playerWidth / 2f
+            val halfHeight = playerHeight / 2f
+            
+            if (x - halfWidth < 0) {
+                x = halfWidth
+            } else if (x + halfWidth > worldWidth) {
+                x = worldWidth - halfWidth
+            }
+            
+            if (y - halfHeight < 0) {
+                y = halfHeight
+            } else if (y + halfHeight > worldHeight) {
+                y = worldHeight - halfHeight
+            }
         }
         
         // Update animation only when moving
@@ -169,12 +226,18 @@ class Player(private val context: Context) {
     }
     
     fun draw(canvas: Canvas, paint: Paint, cameraX: Float, cameraY: Float) {
-        if (currentSprites.isNotEmpty()) {
+        val drawX = x - playerWidth / 2f - cameraX
+        val drawY = y - playerHeight / 2f - cameraY
+        
+        if (isMoving && currentSprites.isNotEmpty()) {
+            // Draw walking animation
             val currentSprite = currentSprites[currentFrame]
-            // Draw player relative to camera position
-            val drawX = x - playerWidth / 2f - cameraX
-            val drawY = y - playerHeight / 2f - cameraY
             canvas.drawBitmap(currentSprite, drawX, drawY, paint)
+        } else {
+            // Draw idle sprite
+            currentIdleSprite?.let { idleSprite ->
+                canvas.drawBitmap(idleSprite, drawX, drawY, paint)
+            }
         }
     }
     

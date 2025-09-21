@@ -1,0 +1,11 @@
+THÔNG TIN MÊ CUNG 100x100
+========================================
+
+LỐI VÀO: Hàng 48 đến 52, Cột 0-4
+LỐI RA:  Hàng 48 đến 52, Cột 95-99
+
+VỊ TRÍ CÁC PHÒNG (góc trên-trái):
+  Phòng 1: Hàng 25-34, Cột 15-24
+  Phòng 2: Hàng 5-14, Cột 70-79
+  Phòng 3: Hàng 85-94, Cột 85-94
+  Phòng 4: Hàng 85-94, Cột 10-19
