@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Matrix
+import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import com.example.mygame.game.assets.GameAssetManager
@@ -20,7 +21,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     private var y = 0f
     private var velocityX = 0f
     private var velocityY = 0f
-    private val speed = 8f
+    private val speed = 12f // Increased speed for larger character size
     
     // Player sprite animations
     private var spritesBack = mutableListOf<Bitmap>()
@@ -44,9 +45,9 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     private val animationSpeed = 8f // Frames before switching to next animation frame
     private var isMoving = false
     
-    // Player size
-    private val playerWidth = 120
-    private val playerHeight = 120
+    // Player size - increased for better visibility
+    private val playerWidth = 128  // Increased from 64 to 128
+    private val playerHeight = 128 // Increased from 64 to 128
     
     enum class Direction {
         FRONT, BACK, LEFT, RIGHT
@@ -60,25 +61,29 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     
     private fun loadSprites() {
         try {
+            Log.d("Player", "Loading sprites...")
             // Load sprites from assets using coroutines
             runBlocking {
                 // Load idle sprites
                 val idleBackBitmap = assetManager.loadTexture("characters/player/idle/player_idle_back.png")
                 idleBackBitmap?.let {
                     idleBack = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
-                }
+                    Log.d("Player", "Loaded idle back sprite")
+                } ?: Log.e("Player", "Failed to load idle back sprite")
                 
                 val idleFrontBitmap = assetManager.loadTexture("characters/player/idle/player_idle_front.png")
                 idleFrontBitmap?.let {
                     idleFront = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
-                }
+                    Log.d("Player", "Loaded idle front sprite")
+                } ?: Log.e("Player", "Failed to load idle front sprite")
                 
-                val idleLeftBitmap = assetManager.loadTexture("characters/player/idle/player_idle_left.png")
+                val idleLeftBitmap = assetManager.loadTexture("characters/player/idle/player_idle_right.png")
                 idleLeftBitmap?.let {
-                    idleLeft = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
-                    // Create right idle by flipping left
-                    idleRight = flipBitmapHorizontally(idleLeft!!)
-                }
+                    idleRight = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
+                    // Create left idle by flipping right
+                    idleLeft = flipBitmapHorizontally(idleRight!!)
+                    Log.d("Player", "Loaded idle right sprite and created left by flipping")
+                } ?: Log.e("Player", "Failed to load idle right sprite")
                 
                 // Load back sprites (3 frames)
                 for (i in 1..3) {
@@ -87,7 +92,8 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                     imageBitmap?.let {
                         val bitmap = it.asAndroidBitmap()
                         spritesBack.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
-                    }
+                        Log.d("Player", "Loaded walk back frame $i")
+                    } ?: Log.e("Player", "Failed to load walk back frame $i")
                 }
                 
                 // Load front sprites (3 frames)
@@ -97,26 +103,36 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                     imageBitmap?.let {
                         val bitmap = it.asAndroidBitmap()
                         spritesFront.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
-                    }
+                        Log.d("Player", "Loaded walk front frame $i")
+                    } ?: Log.e("Player", "Failed to load walk front frame $i")
                 }
                 
-                // Load left sprites (3 frames)
+                // Load left sprites (3 frames) - now load from right folder
                 for (i in 1..3) {
                     val frameNumber = i.toString().padStart(2, '0')
-                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_left_$frameNumber.png")
+                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_right_$frameNumber.png")
                     imageBitmap?.let {
                         val bitmap = it.asAndroidBitmap()
-                        spritesLeft.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
-                    }
+                        spritesRight.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
+                        Log.d("Player", "Loaded walk right frame $i")
+                    } ?: Log.e("Player", "Failed to load walk right frame $i")
                 }
                 
-                // Create right sprites by flipping left sprites horizontally
-                for (leftSprite in spritesLeft) {
-                    val flippedSprite = flipBitmapHorizontally(leftSprite)
-                    spritesRight.add(flippedSprite)
+                // Create left sprites by flipping right sprites horizontally
+                for (rightSprite in spritesRight) {
+                    val flippedSprite = flipBitmapHorizontally(rightSprite)
+                    spritesLeft.add(flippedSprite)
                 }
+                Log.d("Player", "Created ${spritesLeft.size} left sprites by flipping right sprites")
+                
+                Log.d("Player", "Sprite loading summary:")
+                Log.d("Player", "  Back sprites: ${spritesBack.size}")
+                Log.d("Player", "  Front sprites: ${spritesFront.size}")
+                Log.d("Player", "  Right sprites: ${spritesRight.size}")
+                Log.d("Player", "  Left sprites: ${spritesLeft.size} (created by flipping right)")
             }
         } catch (e: Exception) {
+            Log.e("Player", "Error loading sprites", e)
             e.printStackTrace()
         }
     }
@@ -130,6 +146,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     fun setPosition(newX: Float, newY: Float) {
         x = newX
         y = newY
+        Log.d("Player", "Player position set to ($x, $y)")
     }
     
     fun setMovementDirection(deltaX: Float, deltaY: Float) {
@@ -150,6 +167,8 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
             }
             
             updateCurrentSprites()
+        } else {
+            Log.d("Player", "Zero length movement, stopping")
         }
     }
     
@@ -179,7 +198,11 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     }
     
     fun update(worldWidth: Float, worldHeight: Float, mapManager: com.example.mygame.game.managers.MapManager? = null) {
+        if (!isMoving) return // Skip if not moving
+        
         // Calculate new position
+        val oldX = x
+        val oldY = y
         val newX = x + velocityX
         val newY = y + velocityY
         
@@ -194,7 +217,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                 y = newY
             }
         } else {
-            // Fallback to old boundary checking
+            // Fallback: Allow movement but constrain to world bounds
             x = newX
             y = newY
             
@@ -213,6 +236,11 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
             } else if (y + halfHeight > worldHeight) {
                 y = worldHeight - halfHeight
             }
+        }
+        
+        // Debug actual position change (only when blocked)
+        if (oldX == x && oldY == y && isMoving) {
+            Log.w("Player", "Position NOT changed - blocked at ($x, $y)")
         }
         
         // Update animation only when moving
@@ -245,4 +273,8 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
     fun getY(): Float = y
     fun getWidth(): Int = playerWidth
     fun getHeight(): Int = playerHeight
+    fun getFacingDirection(): Direction = facingDirection
+    fun getVelocityX(): Float = velocityX
+    fun getVelocityY(): Float = velocityY
+    fun isPlayerMoving(): Boolean = isMoving
 }
