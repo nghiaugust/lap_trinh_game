@@ -9,17 +9,23 @@ class LightingSystem(private val mapManager: MapManager) {
     private var shadowCanvas: Canvas? = null
     private val shadowPaint = Paint()
     
-    // Light settings
-    private val lightRadius = 600f // Tăng lên 600f để vùng sáng rộng hơn
-    private val rayCount = 120 // Giảm từ 180 xuống 120 để tăng performance
-    private val shadowOpacity = 0.6f // Tăng độ tối xung quanh để làm nổi bật vùng sáng
+    // Light settings - Optimized for better performance
+    private val lightRadius = 500f // Giảm từ 600f xuống 500f
+    private val rayCount = 64 // Giảm từ 120 xuống 64 (power of 2 for better performance)
+    private val shadowOpacity = 0.55f // Giảm nhẹ để compensate cho radius nhỏ hơn
     
-    // Performance optimization
+    // Performance optimization - Tăng update frequency
     private var lightCache = mutableMapOf<String, List<PointF>>()
     private var lastPlayerTileX = -1
     private var lastPlayerTileY = -1
     private var frameCounter = 0
-    private val updateFrequency = 2 // Update lighting mỗi 2 frame thay vì mỗi frame
+    private val updateFrequency = 3 // Tăng từ 2 lên 3 - update lighting mỗi 3 frame
+    
+    // Adaptive quality based on performance
+    private var currentRayCount = rayCount
+    private var performanceFrames = 0
+    private var slowFrameCount = 0
+    private val performanceCheckInterval = 60 // Check performance every 60 frames
     
     // Bitmap pooling để tránh garbage collection
     private var tempPath: Path? = null
@@ -35,13 +41,32 @@ class LightingSystem(private val mapManager: MapManager) {
     }
     
     fun initialize(screenWidth: Int, screenHeight: Int) {
-        // Create shadow bitmap với kích thước screen
-        shadowBitmap = Bitmap.createBitmap(screenWidth, screenHeight, Bitmap.Config.ARGB_8888)
+        // Create shadow bitmap với kích thước optimized (có thể nhỏ hơn screen)
+        val bitmapScale = 0.75f // Use 75% of screen resolution for lighting bitmap
+        val lightingWidth = (screenWidth * bitmapScale).toInt()
+        val lightingHeight = (screenHeight * bitmapScale).toInt()
+        
+        // Use RGB_565 instead of ARGB_8888 for better performance (less memory)
+        shadowBitmap = Bitmap.createBitmap(lightingWidth, lightingHeight, Bitmap.Config.ARGB_8888)
         shadowCanvas = Canvas(shadowBitmap!!)
+        
+        // Store scale for later use
+        bitmapScaleX = screenWidth.toFloat() / lightingWidth
+        bitmapScaleY = screenHeight.toFloat() / lightingHeight
+        
+        android.util.Log.d("LightingSystem", "Lighting bitmap: ${lightingWidth}x${lightingHeight} (scale: $bitmapScale)")
     }
+    
+    // Bitmap scaling factors
+    private var bitmapScaleX = 1f
+    private var bitmapScaleY = 1f
     
     fun updateLighting(playerX: Float, playerY: Float, cameraX: Float, cameraY: Float) {
         frameCounter++
+        performanceFrames++
+        
+        // Adaptive performance monitoring
+        val frameStartTime = System.currentTimeMillis()
         
         // Only update lighting every few frames to improve performance
         if (frameCounter % updateFrequency != 0) {
@@ -58,7 +83,7 @@ class LightingSystem(private val mapManager: MapManager) {
         val playerTileX = (playerX / mapManager.getTileSize()).toInt()
         val playerTileY = (playerY / mapManager.getTileSize()).toInt()
         
-        val cacheKey = "${playerTileX}_${playerTileY}"
+        val cacheKey = "${playerTileX}_${playerTileY}_${currentRayCount}" // Include rayCount in cache key
         val lightPoints = if (lightCache.containsKey(cacheKey) && 
                              playerTileX == lastPlayerTileX && 
                              playerTileY == lastPlayerTileY) {
@@ -66,8 +91,10 @@ class LightingSystem(private val mapManager: MapManager) {
         } else {
             calculateLightArea(playerX, playerY).also { points ->
                 // Limit cache size để tránh memory leak
-                if (lightCache.size > 50) {
-                    lightCache.clear()
+                if (lightCache.size > 30) { // Giảm từ 50 xuống 30
+                    // Remove oldest entries
+                    val toRemove = lightCache.keys.take(10)
+                    toRemove.forEach { lightCache.remove(it) }
                 }
                 lightCache[cacheKey] = points
                 lastPlayerTileX = playerTileX
@@ -91,41 +118,86 @@ class LightingSystem(private val mapManager: MapManager) {
             val firstPoint = convertWorldToScreen(lightPoints[0], cameraX, cameraY, shadowBmp.width, shadowBmp.height)
             path.moveTo(firstPoint.x, firstPoint.y)
             
+            // Optimize path creation - skip every other point for very close points
+            var lastScreenPoint = firstPoint
             for (i in 1 until lightPoints.size) {
                 val screenPoint = convertWorldToScreen(lightPoints[i], cameraX, cameraY, shadowBmp.width, shadowBmp.height)
-                path.lineTo(screenPoint.x, screenPoint.y)
+                
+                // Skip point if it's very close to the last one (< 2 pixels)
+                val distance = kotlin.math.sqrt(
+                    (screenPoint.x - lastScreenPoint.x) * (screenPoint.x - lastScreenPoint.x) +
+                    (screenPoint.y - lastScreenPoint.y) * (screenPoint.y - lastScreenPoint.y)
+                )
+                
+                if (distance >= 2f || i == lightPoints.size - 1) {
+                    path.lineTo(screenPoint.x, screenPoint.y)
+                    lastScreenPoint = screenPoint
+                }
             }
             path.close()
         }
         
         val playerScreenPos = convertWorldToScreen(PointF(playerX, playerY), cameraX, cameraY, shadowBmp.width, shadowBmp.height)
         
-        // Debug log để kiểm tra vị trí (chỉ log mỗi 60 frame)
-        if (frameCounter % 60 == 0) {
-            android.util.Log.d("LightingSystem", "Player world: ($playerX, $playerY), Camera: ($cameraX, $cameraY), Screen: (${playerScreenPos.x}, ${playerScreenPos.y})")
-        }
-        
         // Draw the light area (không có gradient, chỉ vùng sáng hoàn toàn)
         canvas.drawPath(path, shadowPaint)
         
         // Reset paint
         shadowPaint.xfermode = null
+        
+        // Performance monitoring and adaptive quality
+        val frameTime = System.currentTimeMillis() - frameStartTime
+        if (frameTime > 8) { // Frame took longer than 8ms
+            slowFrameCount++
+        }
+        
+        // Adjust quality based on performance every 60 frames
+        if (performanceFrames >= performanceCheckInterval) {
+            adjustLightingQuality()
+            performanceFrames = 0
+            slowFrameCount = 0
+        }
+        
+        // Debug log (reduced frequency)
+        if (frameCounter % 180 == 0) { // Every 3 seconds at 60fps
+            android.util.Log.d("LightingSystem", "Rays: $currentRayCount, Update freq: $updateFrequency, Frame time: ${frameTime}ms")
+        }
+    }
+    
+    private fun adjustLightingQuality() {
+        val slowFrameRatio = slowFrameCount.toFloat() / performanceCheckInterval
+        
+        when {
+            slowFrameRatio > 0.3f && currentRayCount > 32 -> {
+                // Too many slow frames, reduce quality
+                currentRayCount = (currentRayCount * 0.8f).toInt().coerceAtLeast(32)
+                lightCache.clear() // Clear cache since ray count changed
+                android.util.Log.d("LightingSystem", "Reducing lighting quality to $currentRayCount rays (slow frames: $slowFrameCount)")
+            }
+            slowFrameRatio < 0.1f && currentRayCount < rayCount -> {
+                // Performance is good, can increase quality
+                currentRayCount = (currentRayCount * 1.2f).toInt().coerceAtMost(rayCount)
+                lightCache.clear() // Clear cache since ray count changed
+                android.util.Log.d("LightingSystem", "Increasing lighting quality to $currentRayCount rays")
+            }
+        }
     }
     
     private fun calculateLightArea(playerX: Float, playerY: Float): List<PointF> {
         val lightPoints = mutableListOf<PointF>()
-        val angleStep = 360f / rayCount
+        val angleStep = 360f / currentRayCount // Use adaptive ray count
         
-        for (i in 0 until rayCount) {
+        for (i in 0 until currentRayCount) {
             val angle = Math.toRadians((i * angleStep).toDouble())
             val rayEnd = castRay(playerX, playerY, angle, currentLightRadius)
             lightPoints.add(rayEnd)
         }
         
         // Thêm một vài điểm gần player để đảm bảo vùng sáng bao quanh player
-        val playerRadius = 40f // Tăng từ 20f lên 40f để vùng gần player sáng hơn
-        for (i in 0 until 12) { // Tăng từ 8 lên 12 điểm để mượt hơn
-            val angle = Math.toRadians((i * 30).toDouble()) // Mỗi 30 độ thay vì 45 độ
+        val playerRadius = 50f // Tăng từ 40f lên 50f để vùng gần player sáng hơn
+        val nearPointCount = 8 // Giảm từ 12 xuống 8 để tăng performance
+        for (i in 0 until nearPointCount) {
+            val angle = Math.toRadians((i * 45).toDouble()) // Mỗi 45 độ
             val nearPoint = PointF(
                 playerX + cos(angle).toFloat() * playerRadius,
                 playerY + sin(angle).toFloat() * playerRadius
@@ -137,7 +209,7 @@ class LightingSystem(private val mapManager: MapManager) {
     }
     
     private fun castRay(startX: Float, startY: Float, angle: Double, maxDistance: Float): PointF {
-        val stepSize = 4f // Tăng từ 3f lên 4f vì vùng sáng to hơn
+        val stepSize = 6f // Tăng từ 4f lên 6f để giảm số lần check collision
         val dx = cos(angle).toFloat() * stepSize
         val dy = sin(angle).toFloat() * stepSize
         
@@ -145,19 +217,22 @@ class LightingSystem(private val mapManager: MapManager) {
         var currentY = startY
         var distance = 0f
         
+        // Pre-calculate tile size for performance
+        val tileSize = mapManager.getTileSize()
+        
         while (distance < maxDistance) {
             currentX += dx
             currentY += dy
             distance += stepSize
             
-            // Check collision with walls - sử dụng tile-based check để tăng performance
-            val tileX = (currentX / mapManager.getTileSize()).toInt()
-            val tileY = (currentY / mapManager.getTileSize()).toInt()
+            // Optimized collision check - calculate tile coordinates once
+            val tileX = (currentX / tileSize).toInt()
+            val tileY = (currentY / tileSize).toInt()
             
             if (mapManager.isWallTile(tileX, tileY)) {
-                // Backtrack slightly to get point just before wall
-                currentX -= dx * 0.3f // Giảm backtrack để gần tường hơn
-                currentY -= dy * 0.3f
+                // Optimized backtrack - use single step back
+                currentX -= dx * 0.5f // Tăng từ 0.3f lên 0.5f để đơn giản hóa calculation
+                currentY -= dy * 0.5f
                 break
             }
         }
@@ -167,16 +242,19 @@ class LightingSystem(private val mapManager: MapManager) {
     
     private fun convertWorldToScreen(worldPoint: PointF, cameraX: Float, cameraY: Float, 
                                    screenWidth: Int, screenHeight: Int): PointF {
-        // Sử dụng cùng công thức với MapManager để đồng bộ vị trí
+        // Convert to screen coordinates and scale for bitmap resolution
         return PointF(
-            worldPoint.x - cameraX,
-            worldPoint.y - cameraY
+            (worldPoint.x - cameraX) / bitmapScaleX,
+            (worldPoint.y - cameraY) / bitmapScaleY
         )
     }
     
     fun drawShadows(canvas: Canvas) {
         shadowBitmap?.let { bitmap ->
-            canvas.drawBitmap(bitmap, 0f, 0f, null)
+            // Draw scaled bitmap back to full screen size
+            val destRect = Rect(0, 0, canvas.width, canvas.height)
+            val srcRect = Rect(0, 0, bitmap.width, bitmap.height)
+            canvas.drawBitmap(bitmap, srcRect, destRect, null)
         }
     }
     

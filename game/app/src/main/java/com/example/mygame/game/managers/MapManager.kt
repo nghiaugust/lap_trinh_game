@@ -195,27 +195,44 @@ class MapManager(private val context: Context) {
     fun draw(canvas: Canvas, paint: Paint, screenWidth: Int, screenHeight: Int) {
         if (floorTexture == null || wallTexture == null) return
         
-        // Calculate visible tile range
-        val startTileX = (cameraX / tileSize).toInt().coerceAtLeast(0)
-        val startTileY = (cameraY / tileSize).toInt().coerceAtLeast(0)
-        val endTileX = ((cameraX + screenWidth) / tileSize).toInt().coerceAtMost(mapWidth - 1)
-        val endTileY = ((cameraY + screenHeight) / tileSize).toInt().coerceAtMost(mapHeight - 1)
+        // Optimized culling with buffer area to prevent pop-in
+        val bufferTiles = 1 // Add 1 tile buffer around visible area
+        val startTileX = ((cameraX - bufferTiles * tileSize) / tileSize).toInt().coerceAtLeast(0)
+        val startTileY = ((cameraY - bufferTiles * tileSize) / tileSize).toInt().coerceAtLeast(0)
+        val endTileX = ((cameraX + screenWidth + bufferTiles * tileSize) / tileSize).toInt().coerceAtMost(mapWidth - 1)
+        val endTileY = ((cameraY + screenHeight + bufferTiles * tileSize) / tileSize).toInt().coerceAtMost(mapHeight - 1)
         
-        // Draw visible tiles
+        // Performance tracking
+        val tilesDrawn = (endTileX - startTileX + 1) * (endTileY - startTileY + 1)
+        
+        // Draw visible tiles with optimized loop
         for (tileY in startTileY..endTileY) {
             for (tileX in startTileX..endTileX) {
-                if (tileY < mapHeight && tileX < mapWidth) {
-                    val drawX = (tileX * tileSize) - cameraX
-                    val drawY = (tileY * tileSize) - cameraY
-                    
-                    val texture = if (mapData[tileY][tileX] == '0') floorTexture else wallTexture
-                    texture?.let { bitmap ->
-                        canvas.drawBitmap(bitmap, drawX, drawY, paint)
-                    }
+                val drawX = (tileX * tileSize) - cameraX
+                val drawY = (tileY * tileSize) - cameraY
+                
+                // Quick bounds check - skip if tile is completely outside screen
+                if (drawX + tileSize < 0 || drawX > screenWidth || 
+                    drawY + tileSize < 0 || drawY > screenHeight) {
+                    continue
+                }
+                
+                val texture = if (mapData[tileY][tileX] == '0') floorTexture else wallTexture
+                texture?.let { bitmap ->
+                    canvas.drawBitmap(bitmap, drawX, drawY, paint)
                 }
             }
         }
+        
+        // Log performance occasionally for debugging
+        frameDrawCount++
+        if (frameDrawCount % 120 == 0) { // Every 2 seconds at 60fps
+            Log.d("MapManager", "Drawing $tilesDrawn tiles (${startTileX}-${endTileX}, ${startTileY}-${endTileY})")
+        }
     }
+    
+    // Performance tracking
+    private var frameDrawCount = 0
     
     // Cache for tile lookups
     private var lastTileX = -1

@@ -389,6 +389,7 @@ class GameView @JvmOverloads constructor(
         }
         
         val updateStartTime = System.currentTimeMillis()
+        val maxUpdateTime = 12L // Increased to prevent ANR
         
         // Chỉ update khi có player và mapManager
         player?.let { p ->
@@ -397,28 +398,53 @@ class GameView @JvmOverloads constructor(
                     // Update player with collision detection
                     p.update(map.getWorldWidth(), map.getWorldHeight(), map)
                     
-                    // Update camera to follow player
+                    // Check time after player update (most important)
+                    if (System.currentTimeMillis() - updateStartTime > maxUpdateTime) {
+                        Log.w("GameView", "Skipping remaining updates - player update took too long")
+                        return
+                    }
+                    
+                    // Update camera to follow player (lightweight)
                     map.updateCamera(p.getX(), p.getY(), screenWidth, screenHeight)
                     
-                    // Update minimap exploration
+                    // Update minimap exploration (lightweight)
                     miniMap?.updateExploration(p.getX(), p.getY())
                     
-                    // Update projectiles
-                    projectileManager?.update(1f/60f, map) // Assuming 60 FPS
-                    
-                    // Update player health system
-                    playerHealthSystem?.update(1f/60f)
-                    
-                    // Check if we have time left for enemy updates
+                    // Check time before medium-cost operations
                     val currentTime = System.currentTimeMillis()
-                    if (currentTime - updateStartTime < 8) { // Max 8ms for update
-                        // Update enemies
+                    val timeUsed = currentTime - updateStartTime
+                    
+                    if (timeUsed < maxUpdateTime - 2) { // Leave 2ms buffer
+                        // Update projectiles (medium cost)
+                        projectileManager?.update(1f/60f, map)
+                        
+                        // Update player health system (lightweight)
+                        playerHealthSystem?.update(1f/60f)
+                    }
+                    
+                    // Check if we have time left for expensive enemy updates
+                    val remainingTime = maxUpdateTime - (System.currentTimeMillis() - updateStartTime)
+                    if (remainingTime > 4) { // Need at least 4ms for enemy updates
+                        // Update enemies (most expensive operation)
                         lightingSystem?.let { lighting ->
                             enemyManager?.update(1f/60f, p.getX(), p.getY(), lighting)
                         }
                         
-                        // Check combat interactions
-                        checkCombatInteractions()
+                        // Check combat interactions if we still have time
+                        if (System.currentTimeMillis() - updateStartTime < maxUpdateTime - 1) {
+                            checkCombatInteractions()
+                        }
+                    } else {
+                        // Skip enemy updates this frame to prevent ANR
+                        if (remainingTime < 0) {
+                            Log.w("GameView", "Update frame overran by ${-remainingTime}ms")
+                        }
+                    }
+                    
+                    // Performance monitoring
+                    val totalUpdateTime = System.currentTimeMillis() - updateStartTime
+                    if (totalUpdateTime > maxUpdateTime) {
+                        Log.w("GameView", "Frame update took ${totalUpdateTime}ms (target: ${maxUpdateTime}ms)")
                     }
                 }
             }
@@ -702,9 +728,18 @@ class GameView @JvmOverloads constructor(
         
         @Volatile
         private var running = false
-        private val targetFPS = 60
-        private val targetTime = (1000.0 / targetFPS).toLong()
-        private val maxFrameSkip = 5
+        private var targetFPS = 60
+        private var targetTime = (1000.0 / targetFPS).toLong()
+        private val maxFrameSkip = 3 // Reduced from 5
+        
+        // Adaptive FPS
+        private var frameTimeHistory = mutableListOf<Long>()
+        private var adaptiveFpsCounter = 0
+        private val adaptiveFpsCheckInterval = 60 // Check every 60 frames
+        
+        // Performance monitoring
+        private var slowFrameCount = 0
+        private var lastAdaptiveCheck = System.currentTimeMillis()
 
         fun setRunning(isRunning: Boolean) {
             synchronized(this) {
@@ -717,34 +752,52 @@ class GameView @JvmOverloads constructor(
             var loops: Int
             var frameStartTime: Long
             
+            // ANR Prevention: More aggressive timeout
+            val maxFrameTime = 20L // Maximum time per frame to prevent ANR
+            
             while (running) {
                 frameStartTime = System.currentTimeMillis()
                 loops = 0
                 
-                // Update game logic with time limit
+                // Update game logic with enhanced time management and ANR prevention
                 while (System.currentTimeMillis() > nextGameTick && loops < maxFrameSkip) {
                     try {
                         val updateStart = System.currentTimeMillis()
                         gameView.update()
                         val updateTime = System.currentTimeMillis() - updateStart
                         
-                        // If update takes too long, skip additional updates to prevent ANR
-                        if (updateTime > 10) {
-                            Log.w("GameThread", "Update took ${updateTime}ms, skipping additional updates")
+                        // More aggressive time limits to prevent ANR
+                        val updateTimeLimit = if (targetFPS >= 60) 15 else 20 // Increased limits
+                        if (updateTime > updateTimeLimit) {
+                            Log.w("GameThread", "Update took ${updateTime}ms (limit: ${updateTimeLimit}ms), breaking to prevent ANR")
                             break
                         }
                     } catch (e: Exception) {
                         Log.e("GameThread", "Error in update", e)
+                        // Don't break on exceptions, just log and continue
                     }
                     nextGameTick += targetTime
                     loops++
+                    
+                    // ANR Prevention: Break if frame is taking too long
+                    if (System.currentTimeMillis() - frameStartTime > maxFrameTime) {
+                        Log.w("GameThread", "Breaking update loop - frame taking too long")
+                        break
+                    }
                 }
                 
-                // Render frame with time limit
+                // Render frame with enhanced time management
                 var canvas: Canvas? = null
                 try {
                     if (surfaceHolder.surface.isValid) {
                         val renderStart = System.currentTimeMillis()
+                        
+                        // Skip render if we're already taking too long
+                        if (renderStart - frameStartTime > maxFrameTime) {
+                            Log.w("GameThread", "Skipping render to prevent ANR")
+                            continue
+                        }
+                        
                         canvas = surfaceHolder.lockCanvas()
                         canvas?.let { c ->
                             synchronized(surfaceHolder) {
@@ -753,9 +806,10 @@ class GameView @JvmOverloads constructor(
                         }
                         val renderTime = System.currentTimeMillis() - renderStart
                         
-                        // Log if render takes too long
-                        if (renderTime > 12) {
-                            Log.w("GameThread", "Render took ${renderTime}ms")
+                        // Track render performance
+                        if (renderTime > 18) { // More lenient render time limit
+                            slowFrameCount++
+                            Log.w("GameThread", "Slow render: ${renderTime}ms")
                         }
                     }
                 } catch (e: Exception) {
@@ -770,8 +824,34 @@ class GameView @JvmOverloads constructor(
                     }
                 }
                 
-                // Sleep to maintain target FPS and prevent overheating
+                // Enhanced frame timing with adaptive FPS and ANR prevention
                 val frameTime = System.currentTimeMillis() - frameStartTime
+                frameTimeHistory.add(frameTime)
+                
+                // Keep only recent frame times
+                if (frameTimeHistory.size > 10) {
+                    frameTimeHistory.removeAt(0)
+                }
+                
+                // ANR Prevention: Force sleep if frame took too long
+                if (frameTime > maxFrameTime) {
+                    Log.w("GameThread", "Frame took ${frameTime}ms - forcing sleep to prevent ANR")
+                    try {
+                        Thread.sleep(5) // Force a break
+                    } catch (e: InterruptedException) {
+                        Log.w("GameThread", "Sleep interrupted")
+                    }
+                }
+                
+                // Adaptive FPS adjustment
+                adaptiveFpsCounter++
+                if (adaptiveFpsCounter >= adaptiveFpsCheckInterval) {
+                    adjustTargetFPS()
+                    adaptiveFpsCounter = 0
+                    slowFrameCount = 0
+                }
+                
+                // Sleep to maintain target FPS
                 val sleepTime = targetTime - frameTime
                 if (sleepTime > 0) {
                     try {
@@ -779,11 +859,33 @@ class GameView @JvmOverloads constructor(
                     } catch (e: InterruptedException) {
                         Log.w("GameThread", "Sleep interrupted")
                     }
-                } else if (frameTime > targetTime + 5) {
-                    // Log if frame took significantly longer than target
-                    Log.w("GameThread", "Frame took ${frameTime}ms (target: ${targetTime}ms)")
                 }
             }
+        }
+        
+        private fun adjustTargetFPS() {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastAdaptiveCheck < 2000) return // Don't adjust too frequently
+            
+            val avgFrameTime = frameTimeHistory.average()
+            val slowFrameRatio = slowFrameCount.toFloat() / adaptiveFpsCheckInterval
+            
+            when {
+                slowFrameRatio > 0.2f && targetFPS > 30 -> {
+                    // Too many slow frames, reduce target FPS
+                    targetFPS = 45
+                    targetTime = (1000.0 / targetFPS).toLong()
+                    Log.d("GameThread", "Reducing target FPS to $targetFPS (slow frames: $slowFrameCount)")
+                }
+                slowFrameRatio < 0.05f && avgFrameTime < 12 && targetFPS < 60 -> {
+                    // Performance is good, can increase FPS
+                    targetFPS = 60
+                    targetTime = (1000.0 / targetFPS).toLong()
+                    Log.d("GameThread", "Increasing target FPS to $targetFPS")
+                }
+            }
+            
+            lastAdaptiveCheck = currentTime
         }
     }
     
