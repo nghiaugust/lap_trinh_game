@@ -52,6 +52,21 @@ class GameAssetManager(private val context: Context) {
     }
 
     /**
+     * Load bitmap directly from assets - for UI elements that need Android Bitmap
+     */
+    fun loadBitmapDirect(path: String): Bitmap? {
+        return try {
+            val inputStream = context.assets.open(path)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            bitmap
+        } catch (e: IOException) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
      * Load sound effect từ assets/sounds/
      */
     fun loadSound(path: String): Int? {

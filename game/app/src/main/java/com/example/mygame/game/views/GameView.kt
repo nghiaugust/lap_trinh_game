@@ -17,6 +17,7 @@ import com.example.mygame.game.managers.ProjectileManager
 import com.example.mygame.game.managers.EnemyManager
 import com.example.mygame.game.systems.PlayerHealthSystem
 import com.example.mygame.game.ui.GameOverUI
+import com.example.mygame.game.ui.SettingsUI
 import com.example.mygame.game.audio.SoundManager
 
 class GameView @JvmOverloads constructor(
@@ -28,6 +29,7 @@ class GameView @JvmOverloads constructor(
     // Game states
     enum class GameState {
         PLAYING,
+        PAUSED,
         GAME_OVER
     }
     
@@ -43,6 +45,7 @@ class GameView @JvmOverloads constructor(
     private var enemyManager: EnemyManager? = null
     private var playerHealthSystem: PlayerHealthSystem? = null
     private var gameOverUI: GameOverUI? = null
+    private var settingsUI: SettingsUI? = null
     private var soundManager: SoundManager? = null
     private var paint = Paint()
     
@@ -62,6 +65,12 @@ class GameView @JvmOverloads constructor(
     private var attackButtonY = 0f
     private val attackButtonRadius = 120f // Increased for better visibility
     private var isAttackButtonPressed = false
+    
+    // Settings button (next to health bar)
+    private var settingsButtonX = 0f
+    private var settingsButtonY = 0f
+    private val settingsButtonSize = 60f
+    private var isSettingsButtonPressed = false
     
     // Performance optimization
     @Volatile
@@ -93,6 +102,9 @@ class GameView @JvmOverloads constructor(
             // Initialize game over UI
             gameOverUI = GameOverUI()
             
+            // Initialize settings UI
+            settingsUI = SettingsUI()
+            
             // Initialize sound manager
             Log.d("GameView", "Initializing SoundManager...")
             soundManager = SoundManager(context)
@@ -101,6 +113,11 @@ class GameView @JvmOverloads constructor(
             // Initialize player with asset manager
             assetManager?.let { assets ->
                 player = Player(context, assets)
+                
+                // Set sound manager for player
+                soundManager?.let { sm ->
+                    player?.setSoundManager(sm)
+                }
                 
                 // Initialize enemy manager (needs mapManager)
                 mapManager?.let { map ->
@@ -127,6 +144,10 @@ class GameView @JvmOverloads constructor(
         attackButtonX = screenWidth - attackButtonRadius - marginFromEdge
         attackButtonY = screenHeight - attackButtonRadius - marginFromEdge
         
+        // Position settings button next to health bar (top left area, next to health bar)
+        settingsButtonX = 300f  // Next to health bar (barWidth=200f + margin)
+        settingsButtonY = 50f   // Aligned with health bar at top
+        
         // Initialize minimap
         mapManager?.let { map ->
             miniMap?.initialize(map, screenWidth, screenHeight)
@@ -151,6 +172,15 @@ class GameView @JvmOverloads constructor(
         
         // Initialize game over UI
         gameOverUI?.initialize(screenWidth.toFloat(), screenHeight.toFloat())
+        
+        // Initialize settings UI
+        settingsUI?.initialize(
+            screenWidth.toFloat(), 
+            screenHeight.toFloat(), 
+            soundManager?.isMusicEnabled() ?: true,
+            soundManager?.isSfxEnabled() ?: true,
+            assetManager
+        )
         
         // Start background music
         Log.d("GameView", "Starting background music in surfaceCreated...")
@@ -208,7 +238,18 @@ class GameView @JvmOverloads constructor(
         val x = event.x
         val y = event.y
 
-        // Handle game over UI touch first
+        // Handle settings UI touch first (when paused)
+        if (currentGameState == GameState.PAUSED) {
+            settingsUI?.let { ui ->
+                val buttonPressed = ui.handleTouch(x, y, event.action == MotionEvent.ACTION_DOWN)
+                if (event.action == MotionEvent.ACTION_UP && buttonPressed != null) {
+                    handleSettingsButtonClick(buttonPressed)
+                }
+            }
+            return true // Block all other touches during pause
+        }
+
+        // Handle game over UI touch
         if (currentGameState == GameState.GAME_OVER) {
             gameOverUI?.let { ui ->
                 if (ui.handleTouch(x, y, event.action)) {
@@ -224,7 +265,19 @@ class GameView @JvmOverloads constructor(
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                // Check if touch is on minimap first
+                // Check if touch is on settings button first
+                val settingsDistance = Math.sqrt(
+                    Math.pow((x - settingsButtonX).toDouble(), 2.0) +
+                    Math.pow((y - settingsButtonY).toDouble(), 2.0)
+                ).toFloat()
+                
+                if (settingsDistance <= settingsButtonSize) {
+                    isSettingsButtonPressed = true
+                    Log.d("GameView", "Settings button pressed")
+                    return true
+                }
+                
+                // Check if touch is on minimap
                 miniMap?.let { map ->
                     if (map.onTouch(x, y)) {
                         return true  // Minimap handled the touch
@@ -288,6 +341,13 @@ class GameView @JvmOverloads constructor(
             }
             
             MotionEvent.ACTION_UP -> {
+                if (isSettingsButtonPressed) {
+                    isSettingsButtonPressed = false
+                    // Open settings menu and pause game
+                    currentGameState = GameState.PAUSED
+                    Log.d("GameView", "Settings button released - Game paused")
+                }
+                
                 if (isJoystickPressed) {
                     isJoystickPressed = false
                     joystickX = joystickCenterX
@@ -313,7 +373,7 @@ class GameView @JvmOverloads constructor(
                 val success = pm.createFireballByDirection(p.getX(), p.getY(), p.getFacingDirection())
                 
                 if (success) {
-                    soundManager?.playAttackSound() // Play attack sound when fireball is created
+                    soundManager?.playFireballShootSound() // Use specific fireball shoot sound
                     Log.d("GameView", "Fireball created from (${p.getX()}, ${p.getY()}) facing direction ${p.getFacingDirection()}")
                 } else {
                     Log.d("GameView", "Cannot create fireball (cooldown or limit reached)")
@@ -323,7 +383,7 @@ class GameView @JvmOverloads constructor(
     }
 
     fun update() {
-        // Only update game logic when playing
+        // Only update game logic when playing (skip update when paused or game over)
         if (currentGameState != GameState.PLAYING) {
             return
         }
@@ -392,6 +452,7 @@ class GameView @JvmOverloads constructor(
         // Draw UI elements (always on top, not affected by camera)
         drawJoystick(canvas)
         drawAttackButton(canvas)
+        drawSettingsButton(canvas)
         
         // Draw player health and armor UI
         playerHealthSystem?.draw(canvas)
@@ -406,6 +467,11 @@ class GameView @JvmOverloads constructor(
         // Draw game over UI if game is over
         if (currentGameState == GameState.GAME_OVER) {
             gameOverUI?.draw(canvas)
+        }
+        
+        // Draw settings UI if paused
+        if (currentGameState == GameState.PAUSED) {
+            settingsUI?.draw(canvas)
         }
     }
 
@@ -474,6 +540,63 @@ class GameView @JvmOverloads constructor(
         canvas.drawPath(flamePath, paint)
     }
     
+    private fun drawSettingsButton(canvas: Canvas) {
+        // Draw settings button background
+        paint.color = if (isSettingsButtonPressed) {
+            Color.argb(180, 100, 100, 100) // Darker when pressed
+        } else {
+            Color.argb(120, 150, 150, 150) // Gray when not pressed
+        }
+        paint.style = Paint.Style.FILL
+        val buttonRect = RectF(
+            settingsButtonX - settingsButtonSize / 2f,
+            settingsButtonY - settingsButtonSize / 2f,
+            settingsButtonX + settingsButtonSize / 2f,
+            settingsButtonY + settingsButtonSize / 2f
+        )
+        canvas.drawRoundRect(buttonRect, 8f, 8f, paint)
+        
+        // Draw settings button border
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        canvas.drawRoundRect(buttonRect, 8f, 8f, paint)
+        
+        // Draw gear icon (⚙️) or three lines
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.FILL
+        paint.textSize = 32f
+        paint.textAlign = Paint.Align.CENTER
+        
+        // Draw gear symbol
+        canvas.drawText("⚙", settingsButtonX, settingsButtonY + 10f, paint)
+        
+        // Alternative: draw three horizontal lines for settings
+        paint.strokeWidth = 3f
+        paint.style = Paint.Style.STROKE
+        val lineLength = settingsButtonSize * 0.4f
+        val lineSpacing = 6f
+        
+        // Top line
+        canvas.drawLine(
+            settingsButtonX - lineLength / 2f, settingsButtonY - lineSpacing,
+            settingsButtonX + lineLength / 2f, settingsButtonY - lineSpacing,
+            paint
+        )
+        // Middle line
+        canvas.drawLine(
+            settingsButtonX - lineLength / 2f, settingsButtonY,
+            settingsButtonX + lineLength / 2f, settingsButtonY,
+            paint
+        )
+        // Bottom line
+        canvas.drawLine(
+            settingsButtonX - lineLength / 2f, settingsButtonY + lineSpacing,
+            settingsButtonX + lineLength / 2f, settingsButtonY + lineSpacing,
+            paint
+        )
+    }
+    
     // Lifecycle methods
     fun onResume() {
         // Game thread will start automatically when surface is created
@@ -502,6 +625,74 @@ class GameView @JvmOverloads constructor(
         projectileManager = null
         soundManager?.cleanup()
         soundManager = null
+    }
+    
+    private fun handleSettingsButtonClick(buttonType: SettingsUI.ButtonType) {
+        Log.d("GameView", "Settings button clicked: $buttonType")
+        
+        when (buttonType) {
+            SettingsUI.ButtonType.CONTINUE -> {
+                // Resume game
+                currentGameState = GameState.PLAYING
+                Log.d("GameView", "Game resumed")
+            }
+            
+            SettingsUI.ButtonType.MUSIC_TOGGLE -> {
+                // Toggle music on/off
+                soundManager?.let { sm ->
+                    if (sm.isMusicEnabled()) {
+                        sm.stopBackgroundMusic()
+                        sm.setMusicEnabled(false)
+                        Log.d("GameView", "Background music disabled")
+                    } else {
+                        sm.setMusicEnabled(true)
+                        sm.startBackgroundMusic()
+                        Log.d("GameView", "Background music enabled")
+                    }
+                    // Update settings UI with new music state
+                    settingsUI?.updateMusicState(sm.isMusicEnabled())
+                }
+            }
+            
+            SettingsUI.ButtonType.SFX_TOGGLE -> {
+                // Toggle sound effects on/off
+                soundManager?.let { sm ->
+                    if (sm.isSfxEnabled()) {
+                        sm.setSfxEnabled(false)
+                        Log.d("GameView", "Sound effects disabled")
+                    } else {
+                        sm.setSfxEnabled(true)
+                        Log.d("GameView", "Sound effects enabled")
+                    }
+                    // Update settings UI with new SFX state
+                    settingsUI?.updateSfxState(sm.isSfxEnabled())
+                }
+            }
+            
+            SettingsUI.ButtonType.EXIT -> {
+                // Exit to main menu - go to game over state for now
+                // In a real game, this would return to the main menu activity
+                currentGameState = GameState.GAME_OVER
+                Log.d("GameView", "Exiting to main menu")
+            }
+        }
+    }
+    
+    // Public methods for game state control
+    fun pauseGame() {
+        if (currentGameState == GameState.PLAYING) {
+            currentGameState = GameState.PAUSED
+        }
+    }
+    
+    fun resumeGame() {
+        if (currentGameState == GameState.PAUSED) {
+            currentGameState = GameState.PLAYING
+        }
+    }
+    
+    fun isGamePaused(): Boolean {
+        return currentGameState == GameState.PAUSED
     }
 
     inner class GameThread(
@@ -614,7 +805,7 @@ class GameView @JvmOverloads constructor(
                         }
                         
                         if (hitCount > 0) {
-                            soundManager?.playExplosionSound() // Play explosion sound when fireball hits
+                            soundManager?.playFireballExplodeSound() // Use specific fireball explode sound
                             Log.d("GameView", "Player hit $hitCount enemies!")
                         }
                         
@@ -631,6 +822,7 @@ class GameView @JvmOverloads constructor(
     
     private fun triggerGameOver() {
         currentGameState = GameState.GAME_OVER
+        soundManager?.playGameOverSound() // Play game over sound
         Log.d("GameView", "Game state changed to GAME_OVER")
     }
     

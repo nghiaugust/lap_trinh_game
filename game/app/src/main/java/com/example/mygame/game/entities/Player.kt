@@ -10,12 +10,18 @@ import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import com.example.mygame.game.assets.GameAssetManager
+import com.example.mygame.game.audio.SoundManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 class Player(private val context: Context, private val assetManager: GameAssetManager) {
+    
+    // Sound manager for playing walking sound
+    private var soundManager: SoundManager? = null
+    private var lastWalkSoundTime = 0L
+    private val walkSoundInterval = 600L // Play walk sound every 600ms when moving
     
     private var x = 0f
     private var y = 0f
@@ -57,6 +63,11 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
         loadSprites()
         currentSprites = spritesFront
         currentIdleSprite = idleFront
+    }
+    
+    // Method to set sound manager (called from GameView)
+    fun setSoundManager(soundManager: SoundManager) {
+        this.soundManager = soundManager
     }
     
     private fun loadSprites() {
@@ -241,6 +252,15 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
         // Debug actual position change (only when blocked)
         if (oldX == x && oldY == y && isMoving) {
             Log.w("Player", "Position NOT changed - blocked at ($x, $y)")
+        }
+        
+        // Play walking sound when moving and position actually changed
+        if (isMoving && (oldX != x || oldY != y)) {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastWalkSoundTime > walkSoundInterval) {
+                soundManager?.playWalkSound()
+                lastWalkSoundTime = currentTime
+            }
         }
         
         // Update animation only when moving

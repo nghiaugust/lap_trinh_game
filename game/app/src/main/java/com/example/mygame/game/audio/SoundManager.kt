@@ -20,6 +20,10 @@ class SoundManager(private val context: Context) {
     private var sfxVolume = 0.8f // Default volume 80%
     
     // Sound effect IDs (will be loaded later if needed)
+    private var fireballShootSoundId = -1  // ban_lua.mp3
+    private var fireballExplodeSoundId = -1  // lua_no.mp3
+    private var walkSoundId = -1  // walk.mp3
+    private var gameOverSoundId = -1  // game-over.mp3
     private var attackSoundId = -1
     private var hurtSoundId = -1
     private var explosionSoundId = -1
@@ -32,6 +36,7 @@ class SoundManager(private val context: Context) {
     init {
         initializeSoundPool()
         loadBackgroundMusic()
+        loadSoundEffects()
     }
     
     private fun initializeSoundPool() {
@@ -84,6 +89,39 @@ class SoundManager(private val context: Context) {
             Log.e("SoundManager", "Unexpected error loading background music: ${e.message}")
             e.printStackTrace()
         }
+    }
+    
+    private fun loadSoundEffects() {
+        soundPool?.let { pool ->
+            try {
+                Log.d("SoundManager", "Loading sound effects...")
+                
+                // Load fireball shoot sound
+                fireballShootSoundId = pool.load(context.assets.openFd("music/fireball/ban_lua.mp3"), 1)
+                Log.d("SoundManager", "Fireball shoot sound loaded with ID: $fireballShootSoundId")
+                
+                // Load fireball explode sound
+                fireballExplodeSoundId = pool.load(context.assets.openFd("music/fireball/lua_no.mp3"), 1)
+                Log.d("SoundManager", "Fireball explode sound loaded with ID: $fireballExplodeSoundId")
+                
+                // Load walk sound
+                walkSoundId = pool.load(context.assets.openFd("music/character/walk.mp3"), 1)
+                Log.d("SoundManager", "Walk sound loaded with ID: $walkSoundId")
+                
+                // Load game over sound
+                gameOverSoundId = pool.load(context.assets.openFd("music/game-over.mp3"), 1)
+                Log.d("SoundManager", "Game over sound loaded with ID: $gameOverSoundId")
+                
+                Log.d("SoundManager", "All sound effects loaded successfully")
+                
+            } catch (e: IOException) {
+                Log.e("SoundManager", "Failed to load sound effects (IOException): ${e.message}")
+                e.printStackTrace()
+            } catch (e: Exception) {
+                Log.e("SoundManager", "Unexpected error loading sound effects: ${e.message}")
+                e.printStackTrace()
+            }
+        } ?: Log.e("SoundManager", "SoundPool is null, cannot load sound effects")
     }
     
     // Background music controls
@@ -172,11 +210,39 @@ class SoundManager(private val context: Context) {
         Log.d("SoundManager", "SFX enabled: $enabled")
     }
     
-    // Sound effect methods (for future use)
-    fun playAttackSound() {
-        if (isSfxEnabled && soundPool != null && attackSoundId != -1) {
-            soundPool!!.play(attackSoundId, sfxVolume, sfxVolume, 1, 0, 1f)
+    // Sound effect methods
+    fun playFireballShootSound() {
+        if (isSfxEnabled && soundPool != null && fireballShootSoundId != -1) {
+            soundPool!!.play(fireballShootSoundId, sfxVolume, sfxVolume, 1, 0, 1f)
+            Log.d("SoundManager", "Playing fireball shoot sound")
         }
+    }
+    
+    fun playFireballExplodeSound() {
+        if (isSfxEnabled && soundPool != null && fireballExplodeSoundId != -1) {
+            soundPool!!.play(fireballExplodeSoundId, sfxVolume, sfxVolume, 1, 0, 1f)
+            Log.d("SoundManager", "Playing fireball explode sound")
+        }
+    }
+    
+    fun playWalkSound() {
+        if (isSfxEnabled && soundPool != null && walkSoundId != -1) {
+            soundPool!!.play(walkSoundId, sfxVolume * 0.6f, sfxVolume * 0.6f, 1, 0, 1f) // Lower volume for walk
+            Log.d("SoundManager", "Playing walk sound")
+        }
+    }
+    
+    fun playGameOverSound() {
+        if (isSfxEnabled && soundPool != null && gameOverSoundId != -1) {
+            soundPool!!.play(gameOverSoundId, sfxVolume, sfxVolume, 1, 0, 1f)
+            Log.d("SoundManager", "Playing game over sound")
+        }
+    }
+    
+    // Legacy sound effect methods (keep for compatibility)
+    fun playAttackSound() {
+        // Use fireball shoot sound as attack sound
+        playFireballShootSound()
     }
     
     fun playHurtSound() {
@@ -186,9 +252,8 @@ class SoundManager(private val context: Context) {
     }
     
     fun playExplosionSound() {
-        if (isSfxEnabled && soundPool != null && explosionSoundId != -1) {
-            soundPool!!.play(explosionSoundId, sfxVolume, sfxVolume, 1, 0, 1f)
-        }
+        // Use fireball explode sound as explosion sound
+        playFireballExplodeSound()
     }
     
     fun playPickupSound() {
@@ -203,6 +268,22 @@ class SoundManager(private val context: Context) {
     fun getMusicVolume(): Float = musicVolume
     fun getSfxVolume(): Float = sfxVolume
     fun isMusicPlaying(): Boolean = backgroundMusicPlayer?.isPlaying ?: false
+    
+    // Setters for music and sound effects state
+    fun setMusicEnabled(enabled: Boolean) {
+        isMusicEnabled = enabled
+        if (enabled) {
+            startBackgroundMusic()
+        } else {
+            stopBackgroundMusic()
+        }
+        Log.d("SoundManager", "Music enabled set to: $enabled")
+    }
+    
+    fun setSfxEnabled(enabled: Boolean) {
+        isSfxEnabled = enabled
+        Log.d("SoundManager", "SFX enabled set to: $enabled")
+    }
     
     // Lifecycle management
     fun onPause() {
@@ -255,24 +336,5 @@ class SoundManager(private val context: Context) {
             }
         }
         Log.d("SoundManager", "========================")
-    }
-    
-    // Load sound effects from assets (future enhancement)
-    private fun loadSoundEffects() {
-        // This method can be enhanced later to load actual sound effect files
-        // For now, we'll leave the sound IDs as -1 (not loaded)
-        try {
-            soundPool?.let { pool ->
-                // Example of how to load sound effects:
-                // attackSoundId = pool.load(context.assets.openFd("sounds/attack.ogg"), 1)
-                // hurtSoundId = pool.load(context.assets.openFd("sounds/hurt.ogg"), 1)
-                // explosionSoundId = pool.load(context.assets.openFd("sounds/explosion.ogg"), 1)
-                // pickupSoundId = pool.load(context.assets.openFd("sounds/pickup.ogg"), 1)
-                
-                Log.d("SoundManager", "Sound effects loading completed")
-            }
-        } catch (e: Exception) {
-            Log.e("SoundManager", "Failed to load sound effects: ${e.message}")
-        }
     }
 }
