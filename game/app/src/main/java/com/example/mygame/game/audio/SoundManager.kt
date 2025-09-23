@@ -9,12 +9,12 @@ import java.io.IOException
 
 class SoundManager(private val context: Context) {
     
-    // Background music player
+    // Background music heroes
     private var backgroundMusicPlayer: MediaPlayer? = null
     private var isMusicEnabled = true
     private var musicVolume = 0.7f // Default volume 70%
     
-    // Sound effects player
+    // Sound effects heroes
     private var soundPool: SoundPool? = null
     private var isSfxEnabled = true
     private var sfxVolume = 0.8f // Default volume 80%
@@ -88,11 +88,11 @@ class SoundManager(private val context: Context) {
     
     // Background music controls
     fun startBackgroundMusic() {
-        Log.d("SoundManager", "startBackgroundMusic called - isMusicEnabled: $isMusicEnabled, player null: ${backgroundMusicPlayer == null}")
+        Log.d("SoundManager", "startBackgroundMusic called - isMusicEnabled: $isMusicEnabled, heroes null: ${backgroundMusicPlayer == null}")
         if (isMusicEnabled && backgroundMusicPlayer != null) {
             try {
                 val isPlaying = backgroundMusicPlayer!!.isPlaying
-                Log.d("SoundManager", "Music player status - isPlaying: $isPlaying")
+                Log.d("SoundManager", "Music heroes status - isPlaying: $isPlaying")
                 if (!isPlaying) {
                     backgroundMusicPlayer!!.start()
                     Log.d("SoundManager", "Background music started successfully")
@@ -108,7 +108,7 @@ class SoundManager(private val context: Context) {
                 Log.d("SoundManager", "Music is disabled")
             }
             if (backgroundMusicPlayer == null) {
-                Log.e("SoundManager", "Background music player is null")
+                Log.e("SoundManager", "Background music heroes is null")
             }
         }
     }
@@ -251,7 +251,7 @@ class SoundManager(private val context: Context) {
                 Log.d("SoundManager", "Music currentPosition: ${player.currentPosition}")
                 Log.d("SoundManager", "Music duration: ${player.duration}")
             } catch (e: Exception) {
-                Log.e("SoundManager", "Error checking player status: ${e.message}")
+                Log.e("SoundManager", "Error checking heroes status: ${e.message}")
             }
         }
         Log.d("SoundManager", "========================")

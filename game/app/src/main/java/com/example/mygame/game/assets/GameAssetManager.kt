@@ -97,7 +97,7 @@ class GameAssetManager(private val context: Context) {
      * Preload essential assets
      */
     suspend fun preloadEssentialAssets() {
-        // Load player textures
+        // Load heroes textures
         loadTexture("characters/player_idle.png")
         loadTexture("characters/player_walk_01.png")
 

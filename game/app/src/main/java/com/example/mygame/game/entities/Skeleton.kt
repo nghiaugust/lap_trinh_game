@@ -16,7 +16,7 @@ class Skeleton(
     private var y = startY
     private var velocityX = 0f
     private var velocityY = 0f
-    private val speed = 90f // Increased speed for larger character size, still slower than player
+    private val speed = 90f // Increased speed for larger character size, still slower than heroes
     
     // AI States
     enum class State {
@@ -34,7 +34,7 @@ class Skeleton(
     // Combat properties - adjusted for larger character sizes
     private var health = 100 // Tăng từ 3 lên 100
     private var maxHealth = 100 // Tăng từ 3 lên 100
-    private var attackDamage = 20 // Damage to player armor
+    private var attackDamage = 20 // Damage to heroes armor
     private var attackRange = 160f // Increased melee range for larger characters
     private var attackCooldown = 2000L // 2 seconds between attacks
     private var lastAttackTime = 0L
@@ -124,7 +124,7 @@ class Skeleton(
             }
         }
         
-        // Store player position for AI
+        // Store heroes position for AI
         targetPlayerX = playerX
         targetPlayerY = playerY
         
@@ -193,7 +193,7 @@ class Skeleton(
     }
     
     private fun updateChase(deltaTime: Float, playerX: Float, playerY: Float, playerInLight: Boolean) {
-        // If player is no longer in light, return to patrol
+        // If heroes is no longer in light, return to patrol
         if (!playerInLight || !canSeePlayer(playerX, playerY)) {
             changeState(State.PATROL)
             return
@@ -210,7 +210,7 @@ class Skeleton(
             // Close enough to attack
             changeState(State.ATTACK)
         } else {
-            // Chase player
+            // Chase heroes
             velocityX = (dx / distance) * speed
             velocityY = (dy / distance) * speed
         }
@@ -229,7 +229,7 @@ class Skeleton(
         // Update facing direction
         facingRight = dx > 0
         
-        // Check if player is still in attack range
+        // Check if heroes is still in attack range
         if (distance > attackRange) {
             // Player moved away, chase them
             changeState(State.CHASE)
@@ -401,7 +401,7 @@ class Skeleton(
     }
     
     private fun performAttack(playerX: Float, playerY: Float) {
-        Log.d("Skeleton", "Skeleton attacks player at ($playerX, $playerY) for $attackDamage damage!")
+        Log.d("Skeleton", "Skeleton attacks heroes at ($playerX, $playerY) for $attackDamage damage!")
         // Record the attack damage for EnemyManager to pick up
         lastAttackDamageDealt = attackDamage
         damageDealtTime = System.currentTimeMillis()
@@ -583,7 +583,7 @@ class Skeleton(
         return damage
     }
     
-    // Check if skeleton can attack player
+    // Check if skeleton can attack heroes
     fun canAttackPlayer(playerX: Float, playerY: Float): Boolean {
         if (currentState != State.ATTACK) return false
         

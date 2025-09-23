@@ -65,19 +65,19 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
             // Load sprites from assets using coroutines
             runBlocking {
                 // Load idle sprites
-                val idleBackBitmap = assetManager.loadTexture("characters/player/idle/player_idle_back.png")
+                val idleBackBitmap = assetManager.loadTexture("characters/heroes/idle/player_idle_back.png")
                 idleBackBitmap?.let {
                     idleBack = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
                     Log.d("Player", "Loaded idle back sprite")
                 } ?: Log.e("Player", "Failed to load idle back sprite")
                 
-                val idleFrontBitmap = assetManager.loadTexture("characters/player/idle/player_idle_front.png")
+                val idleFrontBitmap = assetManager.loadTexture("characters/heroes/idle/player_idle_front.png")
                 idleFrontBitmap?.let {
                     idleFront = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
                     Log.d("Player", "Loaded idle front sprite")
                 } ?: Log.e("Player", "Failed to load idle front sprite")
                 
-                val idleLeftBitmap = assetManager.loadTexture("characters/player/idle/player_idle_right.png")
+                val idleLeftBitmap = assetManager.loadTexture("characters/heroes/idle/player_idle_right.png")
                 idleLeftBitmap?.let {
                     idleRight = Bitmap.createScaledBitmap(it.asAndroidBitmap(), playerWidth, playerHeight, false)
                     // Create left idle by flipping right
@@ -88,7 +88,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                 // Load back sprites (3 frames)
                 for (i in 1..3) {
                     val frameNumber = i.toString().padStart(2, '0')
-                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_back_$frameNumber.png")
+                    val imageBitmap = assetManager.loadTexture("characters/heroes/walk/player_walk_back_$frameNumber.png")
                     imageBitmap?.let {
                         val bitmap = it.asAndroidBitmap()
                         spritesBack.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
@@ -99,7 +99,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                 // Load front sprites (3 frames)
                 for (i in 1..3) {
                     val frameNumber = i.toString().padStart(2, '0')
-                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_front_$frameNumber.png")
+                    val imageBitmap = assetManager.loadTexture("characters/heroes/walk/player_walk_front_$frameNumber.png")
                     imageBitmap?.let {
                         val bitmap = it.asAndroidBitmap()
                         spritesFront.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
@@ -110,7 +110,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
                 // Load left sprites (3 frames) - now load from right folder
                 for (i in 1..3) {
                     val frameNumber = i.toString().padStart(2, '0')
-                    val imageBitmap = assetManager.loadTexture("characters/player/walk/player_walk_right_$frameNumber.png")
+                    val imageBitmap = assetManager.loadTexture("characters/heroes/walk/player_walk_right_$frameNumber.png")
                     imageBitmap?.let {
                         val bitmap = it.asAndroidBitmap()
                         spritesRight.add(Bitmap.createScaledBitmap(bitmap, playerWidth, playerHeight, false))
@@ -221,7 +221,7 @@ class Player(private val context: Context, private val assetManager: GameAssetMa
             x = newX
             y = newY
             
-            // Keep player within world bounds (not screen bounds)
+            // Keep heroes within world bounds (not screen bounds)
             val halfWidth = playerWidth / 2f
             val halfHeight = playerHeight / 2f
             

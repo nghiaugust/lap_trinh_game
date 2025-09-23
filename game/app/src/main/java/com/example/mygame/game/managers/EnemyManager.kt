@@ -34,7 +34,7 @@ class EnemyManager(
     // Spawn management
     private var lastSpawnTime = 0L
     private val spawnCooldown = 10000L // Increase to 10 seconds to reduce spawn frequency
-    private val spawnDistance = 800f // Spawn skeletons at least this far from player
+    private val spawnDistance = 800f // Spawn skeletons at least this far from heroes
     
     init {
         // Start loading assets immediately when EnemyManager is created
@@ -257,7 +257,7 @@ class EnemyManager(
         val maxUpdatesPerFrame = kotlin.math.min(5, skeletons.size)
         var updatesThisFrame = 0
         
-        // Determine if player is in light (simplified - always true for now)
+        // Determine if heroes is in light (simplified - always true for now)
         val playerInLight = true // We'll improve this later with proper light detection
         
         // Update skeletons with frame limiting
@@ -265,7 +265,7 @@ class EnemyManager(
         while (iterator.hasNext() && updatesThisFrame < maxUpdatesPerFrame) {
             val skeleton = iterator.next()
             
-            // Only update skeletons near the player to save performance
+            // Only update skeletons near the heroes to save performance
             val distance = kotlin.math.sqrt(
                 (skeleton.getX() - playerX) * (skeleton.getX() - playerX) + 
                 (skeleton.getY() - playerY) * (skeleton.getY() - playerY)
@@ -326,7 +326,7 @@ class EnemyManager(
         return hitCount
     }
     
-    // Check if any skeleton can attack the player
+    // Check if any skeleton can attack the heroes
     fun checkSkeletonAttacks(playerX: Float, playerY: Float): Int {
         var totalDamage = 0
         
@@ -334,7 +334,7 @@ class EnemyManager(
             val damage = skeleton.getAndClearLastAttackDamage()
             if (damage > 0) {
                 totalDamage += damage
-                Log.d("EnemyManager", "Skeleton dealt $damage damage to player!")
+                Log.d("EnemyManager", "Skeleton dealt $damage damage to heroes!")
             }
         }
         

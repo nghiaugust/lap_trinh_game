@@ -54,7 +54,7 @@ class LightingSystem(private val mapManager: MapManager) {
         // Clear shadow bitmap
         canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
         
-        // Check if we need to recalculate lighting (player moved to different tile)
+        // Check if we need to recalculate lighting (heroes moved to different tile)
         val playerTileX = (playerX / mapManager.getTileSize()).toInt()
         val playerTileY = (playerY / mapManager.getTileSize()).toInt()
         
@@ -122,8 +122,8 @@ class LightingSystem(private val mapManager: MapManager) {
             lightPoints.add(rayEnd)
         }
         
-        // Thêm một vài điểm gần player để đảm bảo vùng sáng bao quanh player
-        val playerRadius = 40f // Tăng từ 20f lên 40f để vùng gần player sáng hơn
+        // Thêm một vài điểm gần heroes để đảm bảo vùng sáng bao quanh heroes
+        val playerRadius = 40f // Tăng từ 20f lên 40f để vùng gần heroes sáng hơn
         for (i in 0 until 12) { // Tăng từ 8 lên 12 điểm để mượt hơn
             val angle = Math.toRadians((i * 30).toDouble()) // Mỗi 30 độ thay vì 45 độ
             val nearPoint = PointF(

@@ -87,7 +87,7 @@ class GameView @JvmOverloads constructor(
             // Initialize projectile manager
             projectileManager = ProjectileManager(context)
             
-            // Initialize player health system
+            // Initialize heroes health system
             playerHealthSystem = PlayerHealthSystem()
             
             // Initialize game over UI
@@ -98,7 +98,7 @@ class GameView @JvmOverloads constructor(
             soundManager = SoundManager(context)
             Log.d("GameView", "SoundManager initialized")
             
-            // Initialize player with asset manager
+            // Initialize heroes with asset manager
             assetManager?.let { assets ->
                 player = Player(context, assets)
                 
@@ -140,7 +140,7 @@ class GameView @JvmOverloads constructor(
                 projectileManager?.initialize(assets)
             }
             
-            // Initialize player position at map start position
+            // Initialize heroes position at map start position
             player?.setPosition(map.playerStartX, map.playerStartY)
             
             // Spawn initial skeletons
@@ -330,14 +330,14 @@ class GameView @JvmOverloads constructor(
         
         val updateStartTime = System.currentTimeMillis()
         
-        // Chỉ update khi có player và mapManager
+        // Chỉ update khi có heroes và mapManager
         player?.let { p ->
             mapManager?.let { map ->
                 if (screenWidth > 0 && screenHeight > 0) {
-                    // Update player with collision detection
+                    // Update heroes with collision detection
                     p.update(map.getWorldWidth(), map.getWorldHeight(), map)
                     
-                    // Update camera to follow player
+                    // Update camera to follow heroes
                     map.updateCamera(p.getX(), p.getY(), screenWidth, screenHeight)
                     
                     // Update minimap exploration
@@ -346,7 +346,7 @@ class GameView @JvmOverloads constructor(
                     // Update projectiles
                     projectileManager?.update(1f/60f, map) // Assuming 60 FPS
                     
-                    // Update player health system
+                    // Update heroes health system
                     playerHealthSystem?.update(1f/60f)
                     
                     // Check if we have time left for enemy updates
@@ -372,7 +372,7 @@ class GameView @JvmOverloads constructor(
         // Draw map with camera offset
         mapManager?.draw(canvas, paint, screenWidth, screenHeight)
         
-        // Draw player with camera offset
+        // Draw heroes with camera offset
         player?.let { p ->
             mapManager?.let { map ->
                 p.draw(canvas, paint, map.cameraX, map.cameraY)
@@ -393,7 +393,7 @@ class GameView @JvmOverloads constructor(
         drawJoystick(canvas)
         drawAttackButton(canvas)
         
-        // Draw player health and armor UI
+        // Draw heroes health and armor UI
         playerHealthSystem?.draw(canvas)
         
         // Draw minimap (always on top)
@@ -604,12 +604,12 @@ class GameView @JvmOverloads constructor(
                         // Check fireball hits on enemies
                         val hitCount = em.checkFireballCollisions(pm.getActiveFireballs())
                         
-                        // Check if enemies attack player
+                        // Check if enemies attack heroes
                         val damageToPlayer = em.checkSkeletonAttacks(p.getX(), p.getY())
                         
                         if (damageToPlayer > 0 && phs.canTakeDamage()) {
                             phs.takeDamage(damageToPlayer)
-                            soundManager?.playHurtSound() // Play hurt sound when player takes damage
+                            soundManager?.playHurtSound() // Play hurt sound when heroes takes damage
                             Log.d("GameView", "Player takes $damageToPlayer damage from skeletons!")
                         }
                         
@@ -618,7 +618,7 @@ class GameView @JvmOverloads constructor(
                             Log.d("GameView", "Player hit $hitCount enemies!")
                         }
                         
-                        // Check if player died
+                        // Check if heroes died
                         if (phs.isDead() && currentGameState == GameState.PLAYING) {
                             Log.d("GameView", "Game Over - Player died!")
                             triggerGameOver()
@@ -640,10 +640,10 @@ class GameView @JvmOverloads constructor(
         // Reset game state
         currentGameState = GameState.PLAYING
         
-        // Reset player health
+        // Reset heroes health
         playerHealthSystem?.reset()
         
-        // Reset player position
+        // Reset heroes position
         mapManager?.let { map ->
             player?.setPosition(map.playerStartX, map.playerStartY)
         }
