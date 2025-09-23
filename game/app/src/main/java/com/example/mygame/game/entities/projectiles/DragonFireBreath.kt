@@ -18,7 +18,7 @@ class DragonFireBreath(
     private var x = startX
     private var y = startY
     private val speed = 200f // Fire breath speed
-    private val size = 32f // Smaller than fireball
+    private val size = 64f // Larger fire breath size (was 32f)
     private var isActive = true
     private var isExploding = false
     
@@ -32,10 +32,10 @@ class DragonFireBreath(
     private var travelledDistance = 0f
     private val damage = 20 // High damage fire breath
     
-    // Animation
+    // Animation - optimized for performance
     private var animationFrame = 0
     private var lastAnimationTime = 0L
-    private val animationSpeed = 80L // Fast animation for fire effect
+    private val animationSpeed = 120L // Slower animation for better performance (was 80L)
     
     // Explosion properties
     private var explosionFrame = 0
@@ -147,49 +147,91 @@ class DragonFireBreath(
     
     private fun drawFireBreath(canvas: Canvas, drawX: Float, drawY: Float) {
         if (texturesLoaded && fireBreathTextures.isNotEmpty()) {
-            // Draw with texture
+            // Draw with texture - scale to larger size
             val frameIndex = animationFrame.coerceIn(0, fireBreathTextures.size - 1)
             val texture = fireBreathTextures[frameIndex]
-            canvas.drawBitmap(texture, drawX - size, drawY - size, null)
-        } else {
-            // Fallback: draw colored circle
-            canvas.drawCircle(drawX, drawY, size, fireBreathPaint)
             
-            // Add inner glow effect
-            val glowPaint = Paint().apply {
-                color = Color.argb(100, 255, 200, 0)
+            // Create scaled destination rectangle for fire breath sprite
+            val destRect = android.graphics.RectF(
+                drawX - size,
+                drawY - size,
+                drawX + size,
+                drawY + size
+            )
+            
+            canvas.drawBitmap(texture, null, destRect, null)
+        } else {
+            // Enhanced fallback: draw more impressive fire effect
+            // Outer fire ring (red-orange)
+            val outerPaint = Paint().apply {
+                color = Color.argb(200, 255, 69, 0) // Red-orange
                 style = Paint.Style.FILL
                 isAntiAlias = true
             }
-            canvas.drawCircle(drawX, drawY, size * 0.6f, glowPaint)
+            canvas.drawCircle(drawX, drawY, size, outerPaint)
+            
+            // Middle fire ring (orange)
+            val middlePaint = Paint().apply {
+                color = Color.argb(220, 255, 140, 0) // Orange
+                style = Paint.Style.FILL
+                isAntiAlias = true
+            }
+            canvas.drawCircle(drawX, drawY, size * 0.7f, middlePaint)
+            
+            // Inner fire core (yellow-white)
+            val innerPaint = Paint().apply {
+                color = Color.argb(255, 255, 255, 100) // Yellow-white
+                style = Paint.Style.FILL
+                isAntiAlias = true
+            }
+            canvas.drawCircle(drawX, drawY, size * 0.4f, innerPaint)
         }
     }
     
     private fun drawExplosion(canvas: Canvas, drawX: Float, drawY: Float) {
-        val explosionSize = size * (2f + explosionFrame * 0.5f) // Growing explosion
+        val explosionSize = size * (1.5f + explosionFrame * 0.3f) // Growing explosion, larger base size
         
         if (texturesLoaded && explosionTextures.isNotEmpty() && explosionFrame < explosionTextures.size) {
-            // Draw with texture
+            // Draw with texture - scaled
             val texture = explosionTextures[explosionFrame]
-            canvas.drawBitmap(texture, drawX - explosionSize, drawY - explosionSize, null)
+            val destRect = android.graphics.RectF(
+                drawX - explosionSize,
+                drawY - explosionSize,
+                drawX + explosionSize,
+                drawY + explosionSize
+            )
+            canvas.drawBitmap(texture, null, destRect, null)
         } else {
-            // Fallback: draw expanding colored circles
+            // Enhanced fallback: draw impressive fire explosion
             val alpha = (255 * (1f - explosionFrame / 8f)).toInt().coerceIn(0, 255)
-            explosionPaint.alpha = alpha
             
-            canvas.drawCircle(drawX, drawY, explosionSize, explosionPaint)
-            
-            // Inner explosion effect
-            val innerPaint = Paint().apply {
-                color = Color.argb(alpha / 2, 255, 255, 0)
+            // Outer explosion ring (dark red)
+            val outerPaint = Paint().apply {
+                color = Color.argb(alpha, 139, 0, 0)
                 style = Paint.Style.FILL
                 isAntiAlias = true
             }
-            canvas.drawCircle(drawX, drawY, explosionSize * 0.6f, innerPaint)
+            canvas.drawCircle(drawX, drawY, explosionSize, outerPaint)
+            
+            // Middle explosion ring (red-orange)
+            val middlePaint = Paint().apply {
+                color = Color.argb(alpha, 255, 69, 0)
+                style = Paint.Style.FILL
+                isAntiAlias = true
+            }
+            canvas.drawCircle(drawX, drawY, explosionSize * 0.7f, middlePaint)
+            
+            // Inner explosion core (bright orange-yellow)
+            val innerPaint = Paint().apply {
+                color = Color.argb(alpha, 255, 215, 0)
+                style = Paint.Style.FILL
+                isAntiAlias = true
+            }
+            canvas.drawCircle(drawX, drawY, explosionSize * 0.4f, innerPaint)
         }
     }
     
-    // Check collision with target (player)
+    // Check collision with target (heroes)
     fun checkCollision(targetX: Float, targetY: Float, targetSize: Float): Boolean {
         if (!isActive || isExploding) return false
         
@@ -223,7 +265,7 @@ class DragonFireBreath(
     // Check if projectile should be removed
     fun shouldRemove(): Boolean = !isActive
     
-    // Check collision with player
+    // Check collision with heroes
     fun checkPlayerCollision(playerX: Float, playerY: Float): Boolean {
         if (!isActive || isExploding) return false
         
@@ -231,8 +273,8 @@ class DragonFireBreath(
         val dy = y - playerY
         val distance = sqrt(dx * dx + dy * dy)
         
-        // Check if player is within fire breath collision radius
-        if (distance <= (size + 32f)) { // 32f is half player size
+        // Check if heroes is within fire breath collision radius
+        if (distance <= (size + 32f)) { // 32f is half heroes size
             triggerExplosion()
             return true
         }

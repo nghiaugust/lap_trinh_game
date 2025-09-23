@@ -8,16 +8,17 @@ import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.example.mygame.R
-import com.example.mygame.game.entities.Player
+import com.example.mygame.game.entities.heroes.SamuraiArcher
 import com.example.mygame.game.managers.MapManager
 import com.example.mygame.game.assets.GameAssetManager
 import com.example.mygame.game.ui.MiniMap
-import com.example.mygame.game.lighting.LightingSystem
 import com.example.mygame.game.managers.ProjectileManager
 import com.example.mygame.game.managers.EnemyManager
+import com.example.mygame.game.managers.HeroManager
 import com.example.mygame.game.systems.PlayerHealthSystem
 import com.example.mygame.game.ui.GameOverUI
 import com.example.mygame.game.ui.SettingsUI
+import com.example.mygame.game.ui.HeroHealthUI
 import com.example.mygame.game.audio.SoundManager
 
 class GameView @JvmOverloads constructor(
@@ -36,14 +37,14 @@ class GameView @JvmOverloads constructor(
     private var currentGameState = GameState.PLAYING
 
     private var gameThread: GameThread? = null
-    private var player: Player? = null
+    private var heroManager: HeroManager? = null
     private var mapManager: MapManager? = null
     private var assetManager: GameAssetManager? = null
     private var miniMap: MiniMap? = null
-    private var lightingSystem: LightingSystem? = null
     private var projectileManager: ProjectileManager? = null
     private var enemyManager: EnemyManager? = null
     private var playerHealthSystem: PlayerHealthSystem? = null
+    private var heroHealthUI: HeroHealthUI? = null
     private var gameOverUI: GameOverUI? = null
     private var settingsUI: SettingsUI? = null
     private var soundManager: SoundManager? = null
@@ -65,6 +66,12 @@ class GameView @JvmOverloads constructor(
     private var attackButtonY = 0f
     private val attackButtonRadius = 120f // Increased for better visibility
     private var isAttackButtonPressed = false
+    
+    // Shot button (bottom right, above attack button)
+    private var shotButtonX = 0f
+    private var shotButtonY = 0f
+    private val shotButtonRadius = 100f
+    private var isShotButtonPressed = false
     
     // Settings button (next to health bar)
     private var settingsButtonX = 0f
@@ -96,8 +103,14 @@ class GameView @JvmOverloads constructor(
             // Initialize projectile manager
             projectileManager = ProjectileManager(context)
             
-            // Initialize player health system
+            // Initialize hero manager
+            heroManager = HeroManager(context)
+            
+            // Initialize heroes health system
             playerHealthSystem = PlayerHealthSystem()
+            
+            // Initialize hero health UI
+            heroHealthUI = HeroHealthUI()
             
             // Initialize game over UI
             gameOverUI = GameOverUI()
@@ -110,14 +123,8 @@ class GameView @JvmOverloads constructor(
             soundManager = SoundManager(context)
             Log.d("GameView", "SoundManager initialized")
             
-            // Initialize player with asset manager
+            // Initialize managers with asset manager
             assetManager?.let { assets ->
-                player = Player(context, assets)
-                
-                // Set sound manager for player
-                soundManager?.let { sm ->
-                    player?.setSoundManager(sm)
-                }
                 
                 // Initialize enemy manager (needs mapManager)
                 mapManager?.let { map ->
@@ -144,29 +151,32 @@ class GameView @JvmOverloads constructor(
         attackButtonX = screenWidth - attackButtonRadius - marginFromEdge
         attackButtonY = screenHeight - attackButtonRadius - marginFromEdge
         
-        // Position settings button next to health bar (top left area, next to health bar)
-        settingsButtonX = 300f  // Next to health bar (barWidth=200f + margin)
-        settingsButtonY = 50f   // Aligned with health bar at top
+        // Position shot button above attack button
+        shotButtonX = screenWidth - shotButtonRadius - marginFromEdge - 30f // Slightly offset
+        shotButtonY = screenHeight - attackButtonRadius * 2 - shotButtonRadius - marginFromEdge - 20f
+        
+        // Position settings button away from health bars
+        val healthUIHeight = heroHealthUI?.getTotalHeight() ?: 200f // Tăng từ 100f lên 200f
+        settingsButtonX = 450f  // Tăng từ 250f lên 450f để tránh thanh máu lớn hơn
+        settingsButtonY = healthUIHeight + 20f   // Tăng margin từ 10f lên 20f
         
         // Initialize minimap
         mapManager?.let { map ->
             miniMap?.initialize(map, screenWidth, screenHeight)
-            
-            // Initialize lighting system
-            lightingSystem = LightingSystem(map)
-            lightingSystem?.initialize(screenWidth, screenHeight)
             
             // Initialize projectile manager
             assetManager?.let { assets ->
                 projectileManager?.initialize(assets)
             }
             
-            // Initialize player position at map start position
-            player?.setPosition(map.playerStartX, map.playerStartY)
+            // Initialize hero manager with starting position
+            assetManager?.let { assets ->
+                heroManager?.initialize(assets, map.playerStartX, map.playerStartY)
+            }
             
             // Spawn initial skeletons
-            player?.let { p ->
-                enemyManager?.spawnInitialSkeletons(p.getX(), p.getY(), 3)
+            heroManager?.let { hm ->
+                enemyManager?.spawnInitialSkeletons(hm.getCameraTargetX(), hm.getCameraTargetY(), 3)
             }
         }
         
@@ -297,6 +307,19 @@ class GameView @JvmOverloads constructor(
                     return true
                 }
                 
+                // Check if touch is on shot button
+                val shotDistance = Math.sqrt(
+                    Math.pow((x - shotButtonX).toDouble(), 2.0) +
+                    Math.pow((y - shotButtonY).toDouble(), 2.0)
+                ).toFloat()
+                
+                if (shotDistance <= shotButtonRadius) {
+                    isShotButtonPressed = true
+                    performShot()
+                    Log.d("GameView", "Shot button pressed")
+                    return true
+                }
+                
                 // Check if touch is within joystick area
                 val joystickDistance = Math.sqrt(
                     Math.pow((x - joystickCenterX).toDouble(), 2.0) +
@@ -335,7 +358,8 @@ class GameView @JvmOverloads constructor(
                     
                     // Only send movement if joystick is moved enough (reduce from 10 to 5)
                     if (movementDistance > 5f) {
-                        player?.setMovementDirection(deltaX, deltaY)
+                        // Use HeroManager for movement
+                        heroManager?.setMovementDirection(deltaX, deltaY)
                     }
                 }
             }
@@ -352,13 +376,35 @@ class GameView @JvmOverloads constructor(
                     isJoystickPressed = false
                     joystickX = joystickCenterX
                     joystickY = joystickCenterY
-                    player?.stopMovement()
+                    // Use HeroManager to stop movement
+                    heroManager?.stopMovement()
                     Log.d("GameView", "Joystick released")
                 }
                 
                 if (isAttackButtonPressed) {
                     isAttackButtonPressed = false
+                    
+                    // Perform combo attack with HeroManager
+                    val attackPerformed = heroManager?.performAttack() ?: false
+                    if (attackPerformed) {
+                        Log.d("GameView", "Hero performed attack")
+                        soundManager?.playAttackSound()
+                    }
+                    
                     Log.d("GameView", "Attack button released")
+                }
+                
+                if (isShotButtonPressed) {
+                    isShotButtonPressed = false
+                    
+                    // Perform bow shot with HeroManager
+                    val shotPerformed = heroManager?.performSpecialAttack() ?: false
+                    if (shotPerformed) {
+                        Log.d("GameView", "Hero performed special attack")
+                        soundManager?.playFireballShootSound()
+                    }
+                    
+                    Log.d("GameView", "Shot button released")
                 }
             }
         }
@@ -367,18 +413,24 @@ class GameView @JvmOverloads constructor(
     }
     
     private fun performAttack(touchX: Float, touchY: Float) {
-        player?.let { p ->
-            projectileManager?.let { pm ->
-                // Bắn đạn theo hướng nhân vật đang di chuyển/quay mặt
-                val success = pm.createFireballByDirection(p.getX(), p.getY(), p.getFacingDirection())
-                
-                if (success) {
-                    soundManager?.playFireballShootSound() // Use specific fireball shoot sound
-                    Log.d("GameView", "Fireball created from (${p.getX()}, ${p.getY()}) facing direction ${p.getFacingDirection()}")
-                } else {
-                    Log.d("GameView", "Cannot create fireball (cooldown or limit reached)")
-                }
-            }
+        // Perform normal attack with HeroManager
+        val attackPerformed = heroManager?.performAttack() ?: false
+        if (attackPerformed) {
+            Log.d("GameView", "Samurai performed normal attack")
+            soundManager?.playAttackSound()
+        } else {
+            Log.d("GameView", "Cannot perform attack (cooldown or not available)")
+        }
+    }
+    
+    private fun performShot() {
+        // Perform bow shot with HeroManager
+        val shotPerformed = heroManager?.performSpecialAttack() ?: false
+        if (shotPerformed) {
+            Log.d("GameView", "Hero performed bow shot")
+            soundManager?.playFireballShootSound() // Reuse sound or add arrow sound
+        } else {
+            Log.d("GameView", "Cannot perform shot (cooldown or not available)")
         }
     }
 
@@ -391,24 +443,24 @@ class GameView @JvmOverloads constructor(
         val updateStartTime = System.currentTimeMillis()
         val maxUpdateTime = 12L // Increased to prevent ANR
         
-        // Chỉ update khi có player và mapManager
-        player?.let { p ->
+        // Update hero using HeroManager
+        heroManager?.let { hm ->
             mapManager?.let { map ->
                 if (screenWidth > 0 && screenHeight > 0) {
-                    // Update player with collision detection
-                    p.update(map.getWorldWidth(), map.getWorldHeight(), map)
+                    // Update hero with collision detection
+                    hm.update(1f/60f, map.getWorldWidth(), map.getWorldHeight(), map)
                     
-                    // Check time after player update (most important)
+                    // Check time after hero update (most important)
                     if (System.currentTimeMillis() - updateStartTime > maxUpdateTime) {
-                        Log.w("GameView", "Skipping remaining updates - player update took too long")
+                        Log.w("GameView", "Skipping remaining updates - hero update took too long")
                         return
                     }
                     
-                    // Update camera to follow player (lightweight)
-                    map.updateCamera(p.getX(), p.getY(), screenWidth, screenHeight)
+                    // Update camera to follow hero
+                    map.updateCamera(hm.getCameraTargetX(), hm.getCameraTargetY(), screenWidth, screenHeight)
                     
                     // Update minimap exploration (lightweight)
-                    miniMap?.updateExploration(p.getX(), p.getY())
+                    miniMap?.updateExploration(hm.getCameraTargetX(), hm.getCameraTargetY())
                     
                     // Check time before medium-cost operations
                     val currentTime = System.currentTimeMillis()
@@ -418,7 +470,7 @@ class GameView @JvmOverloads constructor(
                         // Update projectiles (medium cost)
                         projectileManager?.update(1f/60f, map)
                         
-                        // Update player health system (lightweight)
+                        // Update heroes health system (lightweight)
                         playerHealthSystem?.update(1f/60f)
                     }
                     
@@ -426,9 +478,7 @@ class GameView @JvmOverloads constructor(
                     val remainingTime = maxUpdateTime - (System.currentTimeMillis() - updateStartTime)
                     if (remainingTime > 4) { // Need at least 4ms for enemy updates
                         // Update enemies (most expensive operation)
-                        lightingSystem?.let { lighting ->
-                            enemyManager?.update(1f/60f, p.getX(), p.getY(), lighting)
-                        }
+                        enemyManager?.update(1f/60f, hm.getCameraTargetX(), hm.getCameraTargetY())
                         
                         // Check combat interactions if we still have time
                         if (System.currentTimeMillis() - updateStartTime < maxUpdateTime - 1) {
@@ -458,35 +508,35 @@ class GameView @JvmOverloads constructor(
         // Draw map with camera offset
         mapManager?.draw(canvas, paint, screenWidth, screenHeight)
         
-        // Draw player with camera offset
-        player?.let { p ->
+        // Draw hero with camera offset
+        heroManager?.let { hm ->
             mapManager?.let { map ->
-                p.draw(canvas, paint, map.cameraX, map.cameraY)
+                // Draw hero
+                hm.render(canvas, map.cameraX, map.cameraY)
                 
                 // Draw projectiles (before lighting so they get shadowed)
                 projectileManager?.draw(canvas, map.cameraX, map.cameraY)
                 
-                // Draw enemies (before lighting so they get shadowed)
+                // Draw enemies
                 enemyManager?.draw(canvas, map.cameraX, map.cameraY)
-                
-                // Update and draw lighting system
-                lightingSystem?.updateLighting(p.getX(), p.getY(), map.cameraX, map.cameraY)
-                lightingSystem?.drawShadows(canvas)
             }
         }
         
         // Draw UI elements (always on top, not affected by camera)
         drawJoystick(canvas)
         drawAttackButton(canvas)
+        drawShotButton(canvas)
         drawSettingsButton(canvas)
         
-        // Draw player health and armor UI
-        playerHealthSystem?.draw(canvas)
+        // Draw hero health UI in top-left corner
+        heroManager?.let { hm ->
+            heroHealthUI?.draw(canvas, hm)
+        }
         
         // Draw minimap (always on top)
-        player?.let { p ->
+        heroManager?.let { hm ->
             mapManager?.let { map ->
-                miniMap?.draw(canvas, map, p.getX(), p.getY())
+                miniMap?.draw(canvas, map, hm.getCameraTargetX(), hm.getCameraTargetY())
             }
         }
         
@@ -528,9 +578,9 @@ class GameView @JvmOverloads constructor(
     private fun drawAttackButton(canvas: Canvas) {
         // Draw attack button base
         paint.color = if (isAttackButtonPressed) {
-            Color.argb(150, 255, 100, 100) // Red when pressed
+            Color.argb(150, 150, 150, 150) // Gray when pressed
         } else {
-            Color.argb(120, 255, 150, 50) // Orange when not pressed
+            Color.argb(120, 200, 200, 200) // Light gray when not pressed
         }
         paint.style = Paint.Style.FILL
         canvas.drawCircle(attackButtonX, attackButtonY, attackButtonRadius, paint)
@@ -541,29 +591,107 @@ class GameView @JvmOverloads constructor(
         paint.strokeWidth = 4f
         canvas.drawCircle(attackButtonX, attackButtonY, attackButtonRadius, paint)
         
-        // Draw fire symbol in the center
+        // Draw sword symbol (replacing fire symbol)
         paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 5f
+
+        // Draw sword blade (vertical line)
+        val swordLength = attackButtonRadius * 0.6f
+        canvas.drawLine(
+            attackButtonX,
+            attackButtonY - swordLength * 0.7f,
+            attackButtonX,
+            attackButtonY + swordLength * 0.3f,
+            paint
+        )
+
+        // Draw sword crossguard (horizontal line)
+        val crossguardLength = attackButtonRadius * 0.4f
+        canvas.drawLine(
+            attackButtonX - crossguardLength / 2f,
+            attackButtonY - swordLength * 0.2f,
+            attackButtonX + crossguardLength / 2f,
+            attackButtonY - swordLength * 0.2f,
+            paint
+        )
+
+        // Draw sword hilt (grip)
+        paint.strokeWidth = 8f
+        canvas.drawLine(
+            attackButtonX,
+            attackButtonY + swordLength * 0.1f,
+            attackButtonX,
+            attackButtonY + swordLength * 0.3f,
+            paint
+        )
+
+        // Draw sword pommel (small circle at the bottom)
         paint.style = Paint.Style.FILL
-        paint.textSize = 40f
+        canvas.drawCircle(attackButtonX, attackButtonY + swordLength * 0.4f, 6f, paint)
+
+        // Draw text label
+        paint.textSize = 18f
         paint.textAlign = Paint.Align.CENTER
-        
-        // Draw flame emoji or text
-        val fireText = "🔥" // You can use text or draw custom flame shape
-        canvas.drawText(fireText, attackButtonX, attackButtonY + 15f, paint)
-        
-        // Alternative: draw simple flame shape if emoji doesn't work
-        paint.color = Color.YELLOW
+        canvas.drawText("ATTACK", attackButtonX, attackButtonY + attackButtonRadius + 25f, paint)
+    }
+    
+    private fun drawShotButton(canvas: Canvas) {
+        // Draw shot button base
+        paint.color = if (isShotButtonPressed) {
+            Color.argb(150, 100, 150, 255) // Blue when pressed
+        } else {
+            Color.argb(120, 50, 100, 200) // Dark blue when not pressed
+        }
         paint.style = Paint.Style.FILL
-        val flameSize = 20f
-        canvas.drawCircle(attackButtonX, attackButtonY - 5f, flameSize * 0.6f, paint)
+        canvas.drawCircle(shotButtonX, shotButtonY, shotButtonRadius, paint)
         
-        paint.color = Color.RED
-        val flamePath = Path()
-        flamePath.moveTo(attackButtonX - flameSize * 0.3f, attackButtonY + 5f)
-        flamePath.lineTo(attackButtonX, attackButtonY - flameSize * 0.8f)
-        flamePath.lineTo(attackButtonX + flameSize * 0.3f, attackButtonY + 5f)
-        flamePath.close()
-        canvas.drawPath(flamePath, paint)
+        // Draw shot button border
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        canvas.drawCircle(shotButtonX, shotButtonY, shotButtonRadius, paint)
+        
+        // Draw bow and arrow symbol
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 4f
+        
+        // Draw bow shape (arc)
+        val bowRadius = shotButtonRadius * 0.4f
+        val bowRect = RectF(
+            shotButtonX - bowRadius,
+            shotButtonY - bowRadius,
+            shotButtonX + bowRadius,
+            shotButtonY + bowRadius
+        )
+        canvas.drawArc(bowRect, -45f, 90f, false, paint)
+        
+        // Draw arrow
+        paint.strokeWidth = 3f
+        val arrowLength = bowRadius * 0.8f
+        canvas.drawLine(
+            shotButtonX - arrowLength * 0.5f,
+            shotButtonY,
+            shotButtonX + arrowLength * 0.8f,
+            shotButtonY,
+            paint
+        )
+        
+        // Draw arrow head
+        paint.style = Paint.Style.FILL
+        val arrowPath = Path()
+        val arrowHeadX = shotButtonX + arrowLength * 0.8f
+        arrowPath.moveTo(arrowHeadX, shotButtonY)
+        arrowPath.lineTo(arrowHeadX - 8f, shotButtonY - 6f)
+        arrowPath.lineTo(arrowHeadX - 8f, shotButtonY + 6f)
+        arrowPath.close()
+        canvas.drawPath(arrowPath, paint)
+        
+        // Draw text label
+        paint.textSize = 20f
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText("SHOT", shotButtonX, shotButtonY + shotButtonRadius + 25f, paint)
     }
     
     private fun drawSettingsButton(canvas: Canvas) {
@@ -645,8 +773,6 @@ class GameView @JvmOverloads constructor(
         assetManager?.dispose()
         assetManager = null
         miniMap = null
-        lightingSystem?.cleanup()
-        lightingSystem = null
         projectileManager?.cleanup()
         projectileManager = null
         soundManager?.cleanup()
@@ -890,33 +1016,45 @@ class GameView @JvmOverloads constructor(
     }
     
     private fun checkCombatInteractions() {
-        player?.let { p ->
-            projectileManager?.let { pm ->
-                enemyManager?.let { em ->
-                    playerHealthSystem?.let { phs ->
-                        // Check fireball hits on enemies
-                        val hitCount = em.checkFireballCollisions(pm.getActiveFireballs())
-                        
-                        // Check if enemies attack player
-                        val damageToPlayer = em.checkSkeletonAttacks(p.getX(), p.getY())
-                        
-                        if (damageToPlayer > 0 && phs.canTakeDamage()) {
-                            phs.takeDamage(damageToPlayer)
-                            soundManager?.playHurtSound() // Play hurt sound when player takes damage
-                            Log.d("GameView", "Player takes $damageToPlayer damage from skeletons!")
-                        }
-                        
-                        if (hitCount > 0) {
-                            soundManager?.playFireballExplodeSound() // Use specific fireball explode sound
-                            Log.d("GameView", "Player hit $hitCount enemies!")
-                        }
-                        
-                        // Check if player died
-                        if (phs.isDead() && currentGameState == GameState.PLAYING) {
-                            Log.d("GameView", "Game Over - Player died!")
-                            triggerGameOver()
-                        }
-                    }
+        heroManager?.let { hm ->
+            enemyManager?.let { em ->
+                // Check projectile hits on enemies (from hero)
+                var projectileHits = 0
+                if (hm.getCurrentHero() is SamuraiArcher) {
+                    val samurai = hm.getCurrentHero() as SamuraiArcher
+                    projectileHits = em.checkArrowCollisions(samurai.getArrows())
+                }
+                
+                // Check melee attack hits on enemies (from hero)
+                var meleeHits = 0
+                if (hm.getCurrentHero() is SamuraiArcher) {
+                    val samurai = hm.getCurrentHero() as SamuraiArcher
+                    meleeHits = em.checkMeleeAttackCollisions(samurai.getAttackHitbox())
+                }
+                
+                // Check if enemies attack hero
+                val damageToHero = em.checkSkeletonAttacks(hm.getCameraTargetX(), hm.getCameraTargetY())
+                
+                if (damageToHero > 0) {
+                    hm.takeDamage(damageToHero.toFloat())
+                    soundManager?.playHurtSound() // Play hurt sound when hero takes damage
+                    Log.d("GameView", "Hero takes $damageToHero damage from enemies!")
+                }
+                
+                if (projectileHits > 0) {
+                    soundManager?.playFireballExplodeSound() // Use sound for projectile hits
+                    Log.d("GameView", "Projectiles hit $projectileHits enemies!")
+                }
+                
+                if (meleeHits > 0) {
+                    soundManager?.playFireballExplodeSound() // Use same sound for melee hits  
+                    Log.d("GameView", "Melee attacks hit $meleeHits enemies!")
+                }
+                
+                // Check if hero died
+                if (hm.isDead() && currentGameState == GameState.PLAYING) {
+                    Log.d("GameView", "Game Over - Hero died!")
+                    triggerGameOver()
                 }
             }
         }
@@ -934,12 +1072,12 @@ class GameView @JvmOverloads constructor(
         // Reset game state
         currentGameState = GameState.PLAYING
         
-        // Reset player health
-        playerHealthSystem?.reset()
+        // Reset hero through HeroManager
+        heroManager?.reset()
         
-        // Reset player position
+        // Reset hero position
         mapManager?.let { map ->
-            player?.setPosition(map.playerStartX, map.playerStartY)
+            heroManager?.setCurrentHeroPosition(map.playerStartX, map.playerStartY)
         }
         
         // Clear all enemies and projectiles
@@ -947,8 +1085,8 @@ class GameView @JvmOverloads constructor(
         projectileManager?.clearAllProjectiles()
         
         // Spawn new enemies
-        player?.let { p ->
-            enemyManager?.spawnInitialSkeletons(p.getX(), p.getY(), 3)
+        heroManager?.let { hm ->
+            enemyManager?.spawnInitialSkeletons(hm.getCameraTargetX(), hm.getCameraTargetY(), 3)
         }
         
         // Reset UI

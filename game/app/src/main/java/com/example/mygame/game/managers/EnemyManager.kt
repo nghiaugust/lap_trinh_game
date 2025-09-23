@@ -6,12 +6,11 @@ import android.graphics.Canvas
 import android.util.Log
 import com.example.mygame.game.assets.GameAssetManager
 import com.example.mygame.game.managers.MapManager
-import com.example.mygame.game.entities.Skeleton
+import com.example.mygame.game.entities.enemies.Skeleton
 import com.example.mygame.game.entities.enemies.Demon
 import com.example.mygame.game.entities.enemies.Dragon
 import com.example.mygame.game.entities.projectiles.DragonFireBreath
 import com.example.mygame.game.entities.Fireball
-import com.example.mygame.game.lighting.LightingSystem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,10 +28,10 @@ class EnemyManager(
     private val dragons = mutableListOf<Dragon>()
     private val dragonProjectiles = mutableListOf<DragonFireBreath>()
     
-    // Enemy limits
-    private val maxSkeletons = 2 // Reduced to make room for other enemies
-    private val maxDemons = 1    // Powerful enemy, limit to 1
-    private val maxDragons = 1   // Boss-like enemy, limit to 1
+    // Enemy limits - reduced for better performance
+    private val maxSkeletons = 1 // Reduced from 2 to 1
+    private val maxDemons = 1    // Keep at 1
+    private val maxDragons = 1   // Keep at 1 (boss-like)
     
     // Death time tracking - since Skeleton class doesn't have getDeathTime()
     private val skeletonDeathTimes = mutableMapOf<Skeleton, Long>()
@@ -63,10 +62,10 @@ class EnemyManager(
     
     private var assetsLoaded = false
     
-    // Spawn management
+    // Spawn management - optimized for better performance
     private var lastSpawnTime = 0L
-    private val spawnCooldown = 15000L // Increased to 15 seconds for variety
-    private val spawnDistance = 800f // Spawn enemies at least this far from player
+    private val spawnCooldown = 20000L // Increased to 20 seconds to reduce enemy density
+    private val spawnDistance = 800f // Spawn enemies at least this far from heroes
     
     init {
         // Start loading assets immediately when EnemyManager is created
@@ -406,8 +405,8 @@ class EnemyManager(
                     }
                 }
                 
-                // Load dragon fire breath frames
-                val fireBreathAssets = assetManager.loadAssetsFromFolder("textures/characters/enemies/dragon/firebreath")
+                // Load dragon fire breath frames from skill folder
+                val fireBreathAssets = assetManager.loadAssetsFromFolder("textures/characters/enemies/dragon/skill")
                 fireBreathAssets?.let { assets ->
                     val tempFireBreathFrames = mutableListOf<Bitmap>()
                     assets.forEach { asset ->
@@ -418,6 +417,7 @@ class EnemyManager(
                     }
                     CoroutineScope(Dispatchers.Main).launch {
                         dragonFireBreathFrames.addAll(tempFireBreathFrames)
+                        Log.d("EnemyManager", "Loaded ${tempFireBreathFrames.size} dragon fire breath frames from skill folder")
                     }
                 }
                 
@@ -594,7 +594,7 @@ class EnemyManager(
         spawnRandomEnemy(playerX, playerY)
     }
     
-    fun update(deltaTime: Float, playerX: Float, playerY: Float, lightingSystem: LightingSystem) {
+    fun update(deltaTime: Float, playerX: Float, playerY: Float) {
         if (!assetsLoaded) return
         
         // ANR Prevention: Limit execution time
@@ -606,7 +606,7 @@ class EnemyManager(
         val maxUpdatesPerFrame = 3 // Increased slightly to handle 3 enemy types
         var updatesThisFrame = 0
         
-        // Determine if player is in light (simplified - always true for now)
+        // Determine if heroes is in light (simplified - always true for now)
         val playerInLight = true
         
         // Update skeletons
@@ -624,13 +624,13 @@ class EnemyManager(
         // Update dragon fire breath projectiles
         updateDragonProjectiles(deltaTime, playerX, playerY)
         
-        // Reduce spawn frequency further to prevent ANR
-        if (System.currentTimeMillis() % 10 == 0L) { // Only try to spawn every 10th frame
+        // Reduce spawn frequency further to prevent performance issues
+        if (System.currentTimeMillis() % 20 == 0L) { // Only try to spawn every 20th frame (was 10)
             spawnRandomEnemy(playerX, playerY)
         }
         
-        // Debug log every 10 seconds (reduced frequency)
-        if (System.currentTimeMillis() % 10000 < 100) {
+        // Debug log every 15 seconds (reduced frequency)
+        if (System.currentTimeMillis() % 15000 < 100) {
             val updateTime = System.currentTimeMillis() - updateStartTime
             val totalActive = skeletons.count { it.isAlive() } + demons.count { it.isAlive() } + dragons.count { it.isAlive() }
             val totalDead = skeletons.count { it.isDead() } + demons.count { it.isDead() } + dragons.count { it.isDead() }
@@ -698,7 +698,7 @@ class EnemyManager(
             
             val distance = kotlin.math.sqrt(distanceSquared)
             
-            // Enhanced culling: only update enemies near player
+            // Enhanced culling: only update enemies near heroes
             if (distance < updateRadius) {
                 // Track when enemy dies for cleanup
                 val wasAlive = isAlive
@@ -885,7 +885,7 @@ class EnemyManager(
             val damage = skeleton.getAndClearLastAttackDamage()
             if (damage > 0) {
                 totalDamage += damage
-                Log.d("EnemyManager", "Skeleton dealt $damage damage to player!")
+                Log.d("EnemyManager", "Skeleton dealt $damage damage to heroes!")
             }
         }
         
@@ -894,7 +894,7 @@ class EnemyManager(
             val damage = demon.getAndClearLastAttackDamage()
             if (damage > 0) {
                 totalDamage += damage
-                Log.d("EnemyManager", "Demon dealt $damage damage to player!")
+                Log.d("EnemyManager", "Demon dealt $damage damage to heroes!")
             }
         }
         
@@ -903,15 +903,15 @@ class EnemyManager(
             val damage = dragon.getAndClearLastAttackDamage()
             if (damage > 0) {
                 totalDamage += damage
-                Log.d("EnemyManager", "Dragon dealt $damage damage to player!")
+                Log.d("EnemyManager", "Dragon dealt $damage damage to heroes!")
             }
         }
         
-        // Check dragon fire breath projectile collisions with player
+        // Check dragon fire breath projectile collisions with heroes
         dragonProjectiles.forEach { projectile ->
             if (projectile.checkPlayerCollision(playerX, playerY)) {
                 totalDamage += 20 // Fire breath does significant damage
-                Log.d("EnemyManager", "Dragon fire breath hit player for 20 damage!")
+                Log.d("EnemyManager", "Dragon fire breath hit heroes for 20 damage!")
             }
         }
         
@@ -981,6 +981,126 @@ class EnemyManager(
     
     // Check if assets are loaded
     fun areAssetsLoaded(): Boolean = assetsLoaded
+    
+    /**
+     * Check arrow collisions with enemies
+     */
+    fun checkArrowCollisions(arrows: List<com.example.mygame.game.entities.projectiles.Arrow>): Int {
+        var hitCount = 0
+        
+        arrows.forEach { arrow ->
+            if (!arrow.isDestroyed()) {
+                // Check skeleton collisions
+                skeletons.forEach { skeleton ->
+                    if (skeleton.isAlive()) {
+                        val skeletonBounds = android.graphics.RectF(
+                            skeleton.getX(),
+                            skeleton.getY(),
+                            skeleton.getX() + skeleton.getWidth(),
+                            skeleton.getY() + skeleton.getHeight()
+                        )
+                        
+                        if (arrow.checkCollision(skeletonBounds.left, skeletonBounds.top, 
+                                skeletonBounds.width(), skeletonBounds.height())) {
+                            skeleton.takeDamage(arrow.getDamage().toInt())
+                            hitCount++
+                            Log.d("EnemyManager", "Arrow hit skeleton! Skeleton health: ${skeleton.getHealth()}")
+                        }
+                    }
+                }
+                
+                // Check demon collisions
+                demons.forEach { demon ->
+                    if (demon.isAlive()) {
+                        if (arrow.checkCollision(demon.getX(), demon.getY(), demon.getWidth(), demon.getHeight())) {
+                            demon.takeDamage(arrow.getDamage().toInt())
+                            hitCount++
+                            Log.d("EnemyManager", "Arrow hit demon! Demon health: ${demon.getHealth()}")
+                        }
+                    }
+                }
+                
+                // Check dragon collisions
+                dragons.forEach { dragon ->
+                    if (dragon.isAlive()) {
+                        if (arrow.checkCollision(dragon.getX(), dragon.getY(), dragon.getWidth(), dragon.getHeight())) {
+                            dragon.takeDamage(arrow.getDamage().toInt())
+                            hitCount++
+                            Log.d("EnemyManager", "Arrow hit dragon! Dragon health: ${dragon.getHealth()}")
+                        }
+                    }
+                }
+            }
+        }
+        
+        return hitCount
+    }
+    
+    /**
+     * Check melee attack collisions with enemies
+     */
+    fun checkMeleeAttackCollisions(attackHitbox: android.graphics.RectF?): Int {
+        if (attackHitbox == null) return 0
+        
+        var hitCount = 0
+        val meleeAttackDamage = 25 // Melee attack damage
+        
+        // Check skeleton collisions
+        skeletons.forEach { skeleton ->
+            if (skeleton.isAlive()) {
+                val skeletonBounds = android.graphics.RectF(
+                    skeleton.getX(),
+                    skeleton.getY(),
+                    skeleton.getX() + skeleton.getWidth(),
+                    skeleton.getY() + skeleton.getHeight()
+                )
+                
+                if (android.graphics.RectF.intersects(attackHitbox, skeletonBounds)) {
+                    skeleton.takeDamage(meleeAttackDamage)
+                    hitCount++
+                    Log.d("EnemyManager", "Melee attack hit skeleton! Skeleton health: ${skeleton.getHealth()}")
+                }
+            }
+        }
+        
+        // Check demon collisions  
+        demons.forEach { demon ->
+            if (demon.isAlive()) {
+                val demonBounds = android.graphics.RectF(
+                    demon.getX(),
+                    demon.getY(),
+                    demon.getX() + demon.getWidth(),
+                    demon.getY() + demon.getHeight()
+                )
+                
+                if (android.graphics.RectF.intersects(attackHitbox, demonBounds)) {
+                    demon.takeDamage(meleeAttackDamage)
+                    hitCount++
+                    Log.d("EnemyManager", "Melee attack hit demon! Demon health: ${demon.getHealth()}")
+                }
+            }
+        }
+        
+        // Check dragon collisions
+        dragons.forEach { dragon ->
+            if (dragon.isAlive()) {
+                val dragonBounds = android.graphics.RectF(
+                    dragon.getX(),
+                    dragon.getY(),
+                    dragon.getX() + dragon.getWidth(),
+                    dragon.getY() + dragon.getHeight()
+                )
+                
+                if (android.graphics.RectF.intersects(attackHitbox, dragonBounds)) {
+                    dragon.takeDamage(meleeAttackDamage)
+                    hitCount++
+                    Log.d("EnemyManager", "Melee attack hit dragon! Dragon health: ${dragon.getHealth()}")
+                }
+            }
+        }
+        
+        return hitCount
+    }
     
     // Cleanup resources
     fun cleanup() {

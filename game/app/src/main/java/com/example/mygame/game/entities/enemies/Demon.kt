@@ -18,10 +18,10 @@ class Demon(
     private var y = startY
     private var velocityX = 0f
     private var velocityY = 0f
-    private val speed = 80f // Faster than skeleton
+    private val speed = 100f // Faster than skeleton
     private val size = 64f
-    private val width = 128f
-    private val height = 128f
+    private val width = 256f
+    private val height = 256f
     
     // Health and combat
     private var health = 50 // More health than skeleton
@@ -52,7 +52,7 @@ class Demon(
     private var currentState = DemonState.IDLE
     private var animationFrame = 0
     private var lastAnimationTime = 0L
-    private val animationSpeed = 150L // Animation frame duration
+    private val animationSpeed = 200L // Slower animation for better performance (was 150L)
     
     // Textures
     private var walkFrames = mutableListOf<Bitmap>()
@@ -102,7 +102,7 @@ class Demon(
         
         val currentTime = System.currentTimeMillis()
         
-        // Calculate distance to player
+        // Calculate distance to heroes
         val dx = playerX - x
         val dy = playerY - y
         val distanceToPlayer = sqrt(dx * dx + dy * dy)
@@ -110,15 +110,15 @@ class Demon(
         // AI Decision Making
         when {
             distanceToPlayer <= attackRange && currentTime - lastAttackTime > attackCooldown -> {
-                // Attack player
+                // Attack heroes
                 performAttack(playerX, playerY)
             }
             distanceToPlayer <= pursuitRange -> {
-                // Chase player
+                // Chase heroes
                 chasePlayer(playerX, playerY, deltaTime)
             }
             distanceToPlayer <= aggroRange -> {
-                // Move towards player
+                // Move towards heroes
                 moveTowardsPlayer(playerX, playerY, deltaTime)
             }
             else -> {
@@ -140,7 +140,7 @@ class Demon(
         lastAttackDamage = attackDamage
         animationFrame = 0 // Reset attack animation
         
-        Log.d("Demon", "Demon attacks player for $attackDamage damage!")
+        Log.d("Demon", "Demon attacks heroes for $attackDamage damage!")
     }
     
     private fun chasePlayer(playerX: Float, playerY: Float, deltaTime: Float) {
@@ -276,8 +276,8 @@ class Demon(
     fun draw(canvas: Canvas, cameraX: Float, cameraY: Float) {
         if (!texturesLoaded) return
         
-        val drawX = x - cameraX - width / 2
-        val drawY = y - cameraY - height / 2
+        val screenX = x - cameraX
+        val screenY = y - cameraY
         
         // Get current animation frame
         val frames = when (currentState) {
@@ -291,7 +291,16 @@ class Demon(
         if (frames.isNotEmpty()) {
             val frameIndex = animationFrame.coerceIn(0, frames.size - 1)
             val currentFrame = frames[frameIndex]
-            canvas.drawBitmap(currentFrame, drawX, drawY, null)
+            
+            // Create destination rectangle for scaling (same approach as Skeleton)
+            val destRect = android.graphics.RectF(
+                screenX - width / 2f,
+                screenY - height / 2f,
+                screenX + width / 2f,
+                screenY + height / 2f
+            )
+            
+            canvas.drawBitmap(currentFrame, null, destRect, null)
         }
     }
     

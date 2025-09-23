@@ -4,10 +4,13 @@ import android.content.Context
 import android.graphics.*
 import android.util.Log
 import com.example.mygame.game.entities.Fireball
+import com.example.mygame.game.entities.projectiles.Arrow
+import com.example.mygame.game.entities.BaseHero
 import com.example.mygame.game.assets.GameAssetManager
 
 class ProjectileManager(private val context: Context) {
     private val fireballs = mutableListOf<Fireball>()
+    private val arrows = mutableListOf<Arrow>()
     private var flameFrames: List<Bitmap> = emptyList()
     private var explosionFrames: List<Bitmap> = emptyList()
     
@@ -153,7 +156,7 @@ class ProjectileManager(private val context: Context) {
     }
     
     // Bắn đạn theo hướng nhân vật di chuyển
-    fun createFireballByDirection(startX: Float, startY: Float, facingDirection: com.example.mygame.game.entities.Player.Direction): Boolean {
+    fun createFireballByDirection(startX: Float, startY: Float, facingDirection: BaseHero.Direction): Boolean {
         val currentTime = System.currentTimeMillis()
         
         // Check cooldown
@@ -169,13 +172,13 @@ class ProjectileManager(private val context: Context) {
         // Tính toán điểm đích dựa trên hướng di chuyển
         val fireballRange = 800f // Tầm xa của đạn
         val targetX = when (facingDirection) {
-            com.example.mygame.game.entities.Player.Direction.LEFT -> startX - fireballRange
-            com.example.mygame.game.entities.Player.Direction.RIGHT -> startX + fireballRange
+            BaseHero.Direction.LEFT -> startX - fireballRange
+            BaseHero.Direction.RIGHT -> startX + fireballRange
             else -> startX
         }
         val targetY = when (facingDirection) {
-            com.example.mygame.game.entities.Player.Direction.BACK -> startY - fireballRange
-            com.example.mygame.game.entities.Player.Direction.FRONT -> startY + fireballRange
+            BaseHero.Direction.BACK -> startY - fireballRange
+            BaseHero.Direction.FRONT -> startY + fireballRange
             else -> startY
         }
         

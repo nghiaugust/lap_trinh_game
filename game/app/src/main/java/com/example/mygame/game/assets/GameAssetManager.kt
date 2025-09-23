@@ -65,6 +65,22 @@ class GameAssetManager(private val context: Context) {
             null
         }
     }
+    
+    /**
+     * Load bitmap from assets - same as loadBitmapDirect but with shorter name
+     */
+    fun loadBitmap(path: String): Bitmap {
+        return try {
+            val fullPath = "textures/$path"
+            val inputStream = context.assets.open(fullPath)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            bitmap ?: throw IOException("Failed to decode bitmap: $fullPath")
+        } catch (e: IOException) {
+            e.printStackTrace()
+            throw e
+        }
+    }
 
     /**
      * Load sound effect từ assets/sounds/
@@ -112,7 +128,7 @@ class GameAssetManager(private val context: Context) {
      * Preload essential assets
      */
     suspend fun preloadEssentialAssets() {
-        // Load player textures
+        // Load heroes textures
         loadTexture("characters/player_idle.png")
         loadTexture("characters/player_walk_01.png")
 

@@ -19,10 +19,10 @@ class Dragon(
     private var y = startY
     private var velocityX = 0f
     private var velocityY = 0f
-    private val speed = 60f // Slower than demon but stronger
+    private val speed = 100f // Slower than demon but stronger
     private val size = 80f // Larger than other enemies
-    private val width = 128f
-    private val height = 128f
+    private val width = 512f  // Double the size of Demon (was 256f)
+    private val height = 512f // Double the size of Demon (was 256f)
     
     // Health and combat
     private var health = 100 // High health boss-like enemy
@@ -31,8 +31,8 @@ class Dragon(
     private val meleeAttackCooldown = 2000L // 2 seconds between melee attacks
     private val fireBreathCooldown = 4000L // 4 seconds between fire breath attacks
     private var lastFireBreathTime = 0L
-    private val meleeAttackRange = 90f
-    private val fireBreathRange = 256f // 2 tiles range
+    private val meleeAttackRange = 150f // Increased for larger dragon
+    private val fireBreathRange = 400f // Increased range for larger dragon (was 256f)
     private val meleeAttackDamage = 25 // High melee damage
     private var lastAttackDamage = 0
     
@@ -41,8 +41,8 @@ class Dragon(
     private val directionChangeInterval = 3000L // Change direction every 3 seconds
     private var targetDirectionX = 0f
     private var targetDirectionY = 0f
-    private val aggroRange = 400f // Large detection range
-    private val pursuitRange = 600f // Large chase range
+    private val aggroRange = 500f // Increased detection range for larger dragon
+    private val pursuitRange = 700f // Increased chase range for larger dragon
     
     // Fire breath projectiles
     private val fireBreaths = mutableListOf<DragonFireBreath>()
@@ -60,7 +60,7 @@ class Dragon(
     private var currentState = DragonState.IDLE
     private var animationFrame = 0
     private var lastAnimationTime = 0L
-    private val animationSpeed = 200L // Slower animation for majestic dragon
+    private val animationSpeed = 250L // Slower animation for better performance (was 200L)
     
     // Textures
     private var walkFrames = mutableListOf<Bitmap>()
@@ -115,7 +115,7 @@ class Dragon(
         
         val currentTime = System.currentTimeMillis()
         
-        // Calculate distance to player
+        // Calculate distance to heroes
         val dx = playerX - x
         val dy = playerY - y
         val distanceToPlayer = sqrt(dx * dx + dy * dy)
@@ -133,11 +133,11 @@ class Dragon(
             currentTime - lastAttackTime > meleeAttackCooldown -> {
                 performMeleeAttack(playerX, playerY)
             }
-            // Chase player
+            // Chase heroes
             distanceToPlayer <= pursuitRange -> {
                 chasePlayer(playerX, playerY, deltaTime)
             }
-            // Move towards player if detected
+            // Move towards heroes if detected
             distanceToPlayer <= aggroRange -> {
                 moveTowardsPlayer(playerX, playerY, deltaTime)
             }
@@ -171,11 +171,15 @@ class Dragon(
         lastFireBreathTime = System.currentTimeMillis()
         animationFrame = 0 // Reset fire breath animation
         
-        // Create fire breath projectile
+        // Create fire breath projectile with loaded textures
         val fireBreath = DragonFireBreath(x, y, playerX, playerY, mapManager)
+        // Load fire breath textures into the projectile
+        if (fireBreathFrames.isNotEmpty()) {
+            fireBreath.loadTextures(fireBreathFrames, emptyList()) // No explosion textures for now
+        }
         fireBreaths.add(fireBreath)
         
-        Log.d("Dragon", "Dragon breathes fire at player!")
+        Log.d("Dragon", "Dragon breathes fire at heroes!")
     }
     
     private fun chasePlayer(playerX: Float, playerY: Float, deltaTime: Float) {
@@ -337,15 +341,15 @@ class Dragon(
         
         if (!texturesLoaded) return
         
-        val drawX = x - cameraX - width / 2
-        val drawY = y - cameraY - height / 2
+        val screenX = x - cameraX
+        val screenY = y - cameraY
         
         // Get current animation frame
         val frames = when (currentState) {
             DragonState.IDLE -> idleFrames
             DragonState.WALKING -> walkFrames
             DragonState.MELEE_ATTACKING -> attackFrames
-            DragonState.FIRE_BREATHING -> fireBreathFrames
+            DragonState.FIRE_BREATHING -> attackFrames // Use attack animation for fire breathing too
             DragonState.HURT -> hurtFrames
             DragonState.DEAD -> deadFrames
         }
@@ -353,11 +357,20 @@ class Dragon(
         if (frames.isNotEmpty()) {
             val frameIndex = animationFrame.coerceIn(0, frames.size - 1)
             val currentFrame = frames[frameIndex]
-            canvas.drawBitmap(currentFrame, drawX, drawY, null)
+            
+            // Create destination rectangle for scaling (Dragon is 2x larger than other enemies)
+            val destRect = android.graphics.RectF(
+                screenX - width / 2f,
+                screenY - height / 2f,
+                screenX + width / 2f,
+                screenY + height / 2f
+            )
+            
+            canvas.drawBitmap(currentFrame, null, destRect, null)
         }
     }
     
-    // Check fire breath collisions with player
+    // Check fire breath collisions with heroes
     fun checkFireBreathCollisions(playerX: Float, playerY: Float, playerSize: Float): Int {
         var totalDamage = 0
         

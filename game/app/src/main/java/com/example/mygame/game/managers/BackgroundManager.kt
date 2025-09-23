@@ -90,7 +90,7 @@ class BackgroundManager(private val context: Context) {
     }
     
     fun updateCamera(playerX: Float, playerY: Float, screenWidth: Int, screenHeight: Int) {
-        // Center camera on player
+        // Center camera on heroes
         cameraX = playerX - screenWidth / 2f
         cameraY = playerY - screenHeight / 2f
         

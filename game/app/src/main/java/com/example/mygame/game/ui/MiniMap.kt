@@ -28,13 +28,13 @@ class MiniMap(private val context: Context) {
     private var tileSize = 64f  // Will be set from MapManager
     
     // Vision settings
-    private val visionRadius = 3  // How many tiles around player are visible
+    private val visionRadius = 3  // How many tiles around heroes are visible
     
     // Colors
     private val unexploredColor = Color.argb(200, 0, 0, 0)  // Semi-transparent black
     private val exploredFloorColor = Color.argb(180, 200, 200, 200)  // Light gray
     private val exploredWallColor = Color.argb(180, 100, 100, 100)   // Dark gray
-    private val playerColor = Color.argb(255, 255, 100, 100)  // Red dot for player
+    private val playerColor = Color.argb(255, 255, 100, 100)  // Red dot for heroes
     private val borderColor = Color.WHITE
     
     // Paint objects
@@ -80,11 +80,11 @@ class MiniMap(private val context: Context) {
     }
     
     fun updateExploration(playerX: Float, playerY: Float) {
-        // Convert player world position to tile coordinates
+        // Convert heroes world position to tile coordinates
         val playerTileX = (playerX / tileSize).toInt()
         val playerTileY = (playerY / tileSize).toInt()
         
-        // Mark tiles around player as explored
+        // Mark tiles around heroes as explored
         for (dy in -visionRadius..visionRadius) {
             for (dx in -visionRadius..visionRadius) {
                 val tileX = playerTileX + dx
@@ -92,7 +92,7 @@ class MiniMap(private val context: Context) {
                 
                 // Check if tile is within bounds
                 if (tileX >= 0 && tileX < mapWidth && tileY >= 0 && tileY < mapHeight) {
-                    // Calculate distance from player
+                    // Calculate distance from heroes
                     val distance = Math.sqrt((dx * dx + dy * dy).toDouble())
                     
                     // Mark as explored if within vision radius
@@ -221,7 +221,7 @@ class MiniMap(private val context: Context) {
             }
         }
         
-        // Draw player position
+        // Draw heroes position
         val playerTileX = (playerX / tileSize)
         val playerTileY = (playerY / tileSize)
         val playerDrawX = startX + (playerTileX * scale)
@@ -231,7 +231,7 @@ class MiniMap(private val context: Context) {
         paint.style = Paint.Style.FILL
         canvas.drawCircle(playerDrawX, playerDrawY, scale / 2f, paint)
         
-        // Draw player border
+        // Draw heroes border
         paint.color = Color.WHITE
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 1f

@@ -117,10 +117,10 @@ class PlayerHealthSystem {
         isFlashing = true
         damageFlashTimer = 0f
         
-        // Check if player died
+        // Check if heroes died
         if (currentHealth <= 0) {
             Log.d("PlayerHealth", "Player died!")
-            // Handle player death (will be implemented later)
+            // Handle heroes death (will be implemented later)
         }
     }
     
@@ -262,7 +262,7 @@ class PlayerHealthSystem {
     fun getHealthPercentage(): Float = currentHealth.toFloat() / maxHealth.toFloat()
     fun getArmorPercentage(): Float = currentArmor.toFloat() / maxArmor.toFloat()
     
-    // Check if player should take damage (for invincibility frames)
+    // Check if heroes should take damage (for invincibility frames)
     fun canTakeDamage(): Boolean {
         val currentTime = System.currentTimeMillis()
         return currentTime - lastDamageTime >= damageCooldown

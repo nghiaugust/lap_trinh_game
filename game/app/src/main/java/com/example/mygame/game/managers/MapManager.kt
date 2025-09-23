@@ -146,6 +146,12 @@ class MapManager(private val context: Context) {
             playerStartX = (bestX + 0.5f) * tileSize
             playerStartY = (bestY + 0.5f) * tileSize
             Log.d("MapManager", "Player start position found at leftmost entrance: ($playerStartX, $playerStartY) at tile ($bestX, $bestY)")
+            
+            // Validate the spawn position with hero size (updated to realistic size)
+            if (!canMoveTo(playerStartX, playerStartY, 64f, 96f)) {
+                Log.w("MapManager", "Initial spawn position is invalid! Searching for alternative...")
+                findAlternativeSpawnPosition()
+            }
             return
         }
         
@@ -156,6 +162,11 @@ class MapManager(private val context: Context) {
                     playerStartX = (x + 0.5f) * tileSize
                     playerStartY = (y + 0.5f) * tileSize
                     Log.d("MapManager", "Player start position found (left quarter): ($playerStartX, $playerStartY) at tile ($x, $y)")
+                    
+                    if (!canMoveTo(playerStartX, playerStartY, 64f, 96f)) {
+                        Log.w("MapManager", "Left quarter spawn position is invalid! Searching for alternative...")
+                        findAlternativeSpawnPosition()
+                    }
                     return
                 }
             }
@@ -168,6 +179,11 @@ class MapManager(private val context: Context) {
                     playerStartX = (x + 0.5f) * tileSize
                     playerStartY = (y + 0.5f) * tileSize
                     Log.d("MapManager", "Player start position found (fallback): ($playerStartX, $playerStartY) at tile ($x, $y)")
+                    
+                    if (!canMoveTo(playerStartX, playerStartY, 64f, 96f)) {
+                        Log.w("MapManager", "Fallback spawn position is invalid! Searching for alternative...")
+                        findAlternativeSpawnPosition()
+                    }
                     return
                 }
             }
@@ -179,8 +195,41 @@ class MapManager(private val context: Context) {
         Log.d("MapManager", "No entrance found, using center: ($playerStartX, $playerStartY)")
     }
     
+    private fun findAlternativeSpawnPosition() {
+        // Search for a valid spawn position in the center area of the map
+        val centerX = mapWidth / 2
+        val centerY = mapHeight / 2
+        val searchRadius = Math.min(mapWidth, mapHeight) / 4
+        
+        for (radius in 1..searchRadius) {
+            for (angle in 0 until 360 step 45) {
+                val radians = Math.toRadians(angle.toDouble())
+                val testX = centerX + (radius * Math.cos(radians)).toInt()
+                val testY = centerY + (radius * Math.sin(radians)).toInt()
+                
+                if (testX >= 0 && testX < mapWidth && testY >= 0 && testY < mapHeight) {
+                    if (mapData[testY][testX] == '0') {
+                        val worldX = (testX + 0.5f) * tileSize
+                        val worldY = (testY + 0.5f) * tileSize
+                        
+                        if (canMoveTo(worldX, worldY, 64f, 96f)) {
+                            playerStartX = worldX
+                            playerStartY = worldY
+                            Log.d("MapManager", "Found valid alternative spawn: ($playerStartX, $playerStartY) at tile ($testX, $testY)")
+                            return
+                        }
+                    }
+                }
+            }
+        }
+        
+        Log.e("MapManager", "Could not find valid spawn position! Using center anyway.")
+        playerStartX = worldWidth / 2f
+        playerStartY = worldHeight / 2f
+    }
+    
     fun updateCamera(playerX: Float, playerY: Float, screenWidth: Int, screenHeight: Int) {
-        // Center camera on player
+        // Center camera on heroes
         cameraX = playerX - screenWidth / 2f
         cameraY = playerY - screenHeight / 2f
         
@@ -270,29 +319,37 @@ class MapManager(private val context: Context) {
     fun canMoveTo(x: Float, y: Float, width: Float, height: Float): Boolean {
         // Quick bounds check first
         if (x < 0 || y < 0 || x >= worldWidth || y >= worldHeight) {
+            Log.d("MapManager", "Movement blocked by world bounds: pos($x, $y), world($worldWidth, $worldHeight)")
             return false
         }
         
-        // Simplified collision: check 4 corners with small margin
+        // Fine-tuned collision margin for optimal movement with smaller hero size
         val halfWidth = width / 2f
         val halfHeight = height / 2f
-        val margin = 4f
+        val margin = 1f  // Very small margin with smaller hero bounds
         
         val left = x - halfWidth + margin
         val right = x + halfWidth - margin
         val top = y - halfHeight + margin
         val bottom = y + halfHeight - margin
         
-        // Check all 4 corners
-        val corners = arrayOf(
-            Pair(left, top),      // Top-left
-            Pair(right, top),     // Top-right
-            Pair(left, bottom),   // Bottom-left
-            Pair(right, bottom)   // Bottom-right
+        // Check bounds after applying margin
+        if (left < 0 || right >= worldWidth || top < 0 || bottom >= worldHeight) {
+            Log.d("MapManager", "Movement blocked by margin bounds: left=$left, right=$right, top=$top, bottom=$bottom, world($worldWidth, $worldHeight)")
+            return false
+        }
+        
+        // Check only 4 corners for simpler and more permissive collision detection
+        val checkPoints = arrayOf(
+            Pair(left, top),       // Top-left
+            Pair(right, top),      // Top-right
+            Pair(left, bottom),    // Bottom-left
+            Pair(right, bottom)    // Bottom-right
         )
         
-        for (corner in corners) {
-            if (isWall(corner.first, corner.second)) {
+        for ((i, point) in checkPoints.withIndex()) {
+            if (isWall(point.first, point.second)) {
+                // Reduced logging to prevent spam
                 return false
             }
         }
