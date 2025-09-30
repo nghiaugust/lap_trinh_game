@@ -1,0 +1,28 @@
+R_DEF: Internal format may change without notice
+local
+color black
+color purple_200
+color purple_500
+color purple_700
+color teal_200
+color teal_700
+color white
+drawable back_1
+drawable back_2
+drawable back_3
+drawable background
+drawable bg
+drawable front_1
+drawable front_2
+drawable front_3
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+drawable left_1
+drawable left_2
+drawable left_3
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+style Theme.Mygame
+xml backup_rules
+xml data_extraction_rules
